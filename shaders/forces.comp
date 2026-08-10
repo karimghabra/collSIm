@@ -1,0 +1,233 @@
+#version 460
+// Segment-segment interactions: soft core repulsion + registry-modulated
+// attraction. Registry energies U(stagger) come from sequence-derived 1D
+// textures (R = electrostatic, G = hydrophobic; negative = attractive).
+layout(local_size_x = 128) in;
+layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
+layout(std430, binding = 3) writeonly buffer SegF { vec4 segF[]; };
+layout(std430, binding = 10) buffer Stats { uint stats[]; };
+layout(std430, binding = 18) readonly buffer NbrList { uint nbr[]; };
+layout(std430, binding = 19) readonly buffer NbrCnt { uint nbrCnt[]; };
+layout(std430, binding = 22) buffer AttMag { float attMag[]; };
+uniform int statsOn;
+uniform int nbrCap;
+uniform int pbc;
+layout(binding = 0) uniform sampler1D parTex;
+layout(binding = 1) uniform sampler1D apTex;
+layout(binding = 2) uniform sampler3D parTex2;   // x=phiB, y=phiA, z=stagger
+layout(binding = 3) uniform sampler3D apTex2;
+layout(std430, binding = 6) readonly buffer Frames { vec4 frm[]; };
+layout(std430, binding = 12) writeonly buffer SegTq { float segTq[]; };
+
+uniform int nSeg;
+uniform int nBeads;
+uniform float segLen;
+uniform vec3 boxHalf;
+uniform float cell;
+uniform vec3 gridDim;
+uniform float rRep, kRep, attR0, attW, cutoff;
+uniform float epsEl, epsHy, epsNs, apMix, epsDep, depR;
+uniform int specific;
+uniform float molLen, profDs;
+uniform int nPar, nAp;
+uniform float fMax, dPeriod;
+uniform int registryMode;         // 0 off, 1 funnel-1D, 2 azimuthal-2D
+uniform float p2Dstep, p2S0;
+uniform int p2nD, p2nR, p2nPhi;
+
+vec3 qrot(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
+
+vec2 samp3Par(float delta, float pa, float pb) {
+    vec3 tc = vec3(pb / 6.2831853 + 0.5, pa / 6.2831853 + 0.5,
+                   (delta / p2Dstep + float(p2nD - 1) * 0.5 + 0.5) / float(p2nD));
+    return texture(parTex2, tc).rg;
+}
+vec2 samp3Ap(float rho, float pa, float pb) {
+    vec3 tc = vec3(pb / 6.2831853 + 0.5, pa / 6.2831853 + 0.5,
+                   ((rho + 2.0 * p2S0) / p2Dstep + 0.5) / float(p2nR));
+    return texture(apTex2, tc).rg;
+}
+
+vec3 mimg(vec3 d) {
+    if (pbc == 0) return d;
+    vec3 bs = 2.0 * boxHalf;
+    return d - bs * round(d / bs);
+}
+
+// closest points on segments P1+s*D1, P2+t*D2, s,t in [0,1]
+void segClosest(vec3 P1, vec3 D1, vec3 P2, vec3 D2, out float s, out float t) {
+    vec3 r = P1 - P2;
+    float a = dot(D1, D1), e = dot(D2, D2);
+    float b = dot(D1, D2), c = dot(D1, r), f = dot(D2, r);
+    float den = a * e - b * b;
+    if (e < 1e-9 || a < 1e-9) { s = 0.0; t = 0.0; return; }
+    s = (den > 1e-7) ? clamp((b * f - c * e) / den, 0.0, 1.0) : 0.0;
+    t = (b * s + f) / e;
+    if (t < 0.0)      { t = 0.0; s = clamp(-c / a, 0.0, 1.0); }
+    else if (t > 1.0) { t = 1.0; s = clamp((b - c) / a, 0.0, 1.0); }
+}
+
+vec2 sampPar(float delta) {
+    float tc = (delta / profDs + float(nPar - 1) * 0.5 + 0.5) / float(nPar);
+    return texture(parTex, tc).rg;
+}
+vec2 sampAp(float rho) {
+    float tc = (rho / profDs + 0.5) / float(nAp);
+    return texture(apTex, tc).rg;
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(nSeg)) return;
+    int molI = int(i) / (nBeads - 1);
+    int kI = int(i) % (nBeads - 1);
+    int bi = molI * nBeads + kI;
+    vec3 A0 = pos[bi].xyz, A1 = pos[bi + 1].xyz;
+    vec3 dA = A1 - A0;
+    vec3 tA = normalize(dA);
+    float sA0 = float(kI) * segLen;
+
+    vec3 F1a = vec3(0.0), F2a = vec3(0.0);   // attractive sums
+    vec3 F1r = vec3(0.0), F2r = vec3(0.0);   // repulsive sums (never limited)
+    float tqA = 0.0;                          // twist torque on this segment
+    float attSum = 0.0;                       // unscaled attraction magnitude
+    // symmetric saturation: pair attraction scaled by min(sI, sJ) with scales
+    // from last step's unsaturated sums -> Newton's third law holds exactly
+    float attMax = 1.3 * fMax;
+    float aI = attMag[i];
+    float sI = aI > attMax ? attMax / aI : 1.0;
+
+    uint num = nbrCnt[i];
+    uint lbase = i * uint(nbrCap);
+    {
+        for (uint kk = 0u; kk < num; ++kk) {
+            uint j = nbr[lbase + kk];
+            int molJ = int(j) / (nBeads - 1);
+            int kJ = int(j) % (nBeads - 1);
+            bool same = (molJ == molI);
+            int bj = molJ * nBeads + kJ;
+            vec3 B0 = pos[bj].xyz, B1 = pos[bj + 1].xyz;
+            // shift the whole partner segment to its nearest periodic image
+            vec3 midA = 0.5 * (A0 + A1);
+            vec3 midB = 0.5 * (B0 + B1);
+            vec3 shift = mimg(midB - midA) - (midB - midA);
+            B0 += shift;
+            B1 += shift;
+            float u, v;
+            segClosest(A0, dA, B0, B1 - B0, u, v);
+            vec3 xa = A0 + u * dA;
+            vec3 xb = B0 + v * (B1 - B0);
+            vec3 dvec = xb - xa;
+            float d = length(dvec);
+            if (d > cutoff || d < 1e-5) continue;
+            vec3 nh = dvec / d;
+
+            vec3 F = vec3(0.0);          // attractive part, clamped below
+            vec3 Frep = vec3(0.0);       // repulsive core, never clamped
+            if (d < rRep) Frep = -kRep * (rRep - d) * nh;
+            if (statsOn == 1 && d < 1.0) atomicAdd(stats[0], 1u);
+
+            if (!same) {
+                if (statsOn == 1 && d < 2.5) atomicAdd(stats[1], 1u);
+                float env = exp(-((d - attR0) * (d - attR0)) / (attW * attW));
+                float denv = env * (-2.0 * (d - attR0) / (attW * attW));
+                vec3 tB = normalize(B1 - B0);
+                float ca = dot(tA, tB);
+                float wp = ca > 0.0 ? ca * ca : 0.0;
+                float wa = ca < 0.0 ? ca * ca * apMix : 0.0;
+                float sB0 = float(kJ) * segLen;
+                float G = -epsNs, dG = 0.0;
+                // symmetrized pair tangent: both members compute the same axis,
+                // so registry sliding forces are exactly equal-and-opposite
+                float sgn = ca >= 0.0 ? 1.0 : -1.0;
+                vec3 tP = tA + sgn * tB;
+                float lp = length(tP);
+                tP = lp > 1e-5 ? tP / lp : tA;
+                float axial = dot(dvec, tP);
+                float delta = (sA0 + u * segLen) - (sB0 + v * segLen) + axial;
+                float rho = (sA0 + u * segLen) + (sB0 + v * segLen) + axial;
+                if (statsOn == 1 && d < 2.5 && wp > 0.5) {
+                    float dk = abs(delta) / dPeriod;
+                    float frac = abs(dk - round(dk));
+                    if (round(dk) >= 1.0 && frac * dPeriod < 3.0)
+                        atomicAdd(stats[2], 1u);
+                }
+                if (registryMode == 1) {
+                    if (wp > 1e-3) {
+                        vec2 u0 = sampPar(delta);
+                        vec2 up = sampPar(delta + profDs);
+                        vec2 um = sampPar(delta - profDs);
+                        G += wp * (epsEl * u0.r + epsHy * u0.g);
+                        dG += wp * (epsEl * (up.r - um.r) + epsHy * (up.g - um.g)) / (2.0 * profDs);
+                    }
+                    if (wa > 1e-3) {
+                        vec2 u0 = sampAp(rho);
+                        vec2 up = sampAp(rho + profDs);
+                        vec2 um = sampAp(rho - profDs);
+                        G += wa * (epsEl * u0.r + epsHy * u0.g);
+                        dG += wa * (epsEl * (up.r - um.r) + epsHy * (up.g - um.g)) / (2.0 * profDs);
+                    }
+                } else if (registryMode == 2 && (wp > 1e-3 || wa > 1e-3)) {
+                    // facing angles from material frames at the closest points
+                    vec4 qa0 = frm[bi], qa1 = frm[bi + 1];
+                    if (dot(qa0, qa1) < 0.0) qa1 = -qa1;
+                    vec4 qA = normalize(mix(qa0, qa1, u));
+                    vec4 qb0 = frm[bj], qb1 = frm[bj + 1];
+                    if (dot(qb0, qb1) < 0.0) qb1 = -qb1;
+                    vec4 qB = normalize(mix(qb0, qb1, v));
+                    vec3 nA = qrot(qA, vec3(1, 0, 0)), bA = qrot(qA, vec3(0, 1, 0));
+                    vec3 nB = qrot(qB, vec3(1, 0, 0)), bB = qrot(qB, vec3(0, 1, 0));
+                    float pa = atan(dot(nh, bA), dot(nh, nA));
+                    float pb = atan(dot(-nh, bB), dot(-nh, nB));
+                    float dphi = 6.2831853 / float(p2nPhi);
+                    if (wp > 1e-3) {
+                        vec2 u0 = samp3Par(delta, pa, pb);
+                        vec2 uzp = samp3Par(delta + p2Dstep, pa, pb);
+                        vec2 uzm = samp3Par(delta - p2Dstep, pa, pb);
+                        vec2 uap = samp3Par(delta, pa + dphi, pb);
+                        vec2 uam = samp3Par(delta, pa - dphi, pb);
+                        G += wp * (epsEl * u0.r + epsHy * u0.g);
+                        dG += wp * (epsEl * (uzp.r - uzm.r) + epsHy * (uzp.g - uzm.g)) / (2.0 * p2Dstep);
+                        tqA += env * wp * (epsEl * (uap.r - uam.r) + epsHy * (uap.g - uam.g)) / (2.0 * dphi);
+                    }
+                    if (wa > 1e-3) {
+                        vec2 u0 = samp3Ap(rho, pa, pb);
+                        vec2 uzp = samp3Ap(rho + p2Dstep, pa, pb);
+                        vec2 uzm = samp3Ap(rho - p2Dstep, pa, pb);
+                        vec2 uap = samp3Ap(rho, pa + dphi, pb);
+                        vec2 uam = samp3Ap(rho, pa - dphi, pb);
+                        G += wa * (epsEl * u0.r + epsHy * u0.g);
+                        dG += wa * (epsEl * (uzp.r - uzm.r) + epsHy * (uzp.g - uzm.g)) / (2.0 * p2Dstep);
+                        tqA += env * wa * (epsEl * (uap.r - uam.r) + epsHy * (uap.g - uam.g)) / (2.0 * dphi);
+                    }
+                } else if (registryMode == 0) {
+                    G += -0.35 * (wp + wa) * (epsEl + epsHy) * 0.125;
+                }
+                // E = env(d) * G(delta);  F_on_A = denv*G*nh + env*dG*tP
+                F += denv * G * nh + env * dG * tP;
+
+                // depletion attraction (crowding agents): isotropic, longer range
+                if (epsDep > 0.0) {
+                    float md = max(d - attR0, 0.0);
+                    float ed = exp(-(md * md) / (depR * depR));
+                    F += (epsDep * 2.0 * md / (depR * depR)) * ed * nh;
+                }
+            }
+
+            float fm = length(F);
+            if (fm > fMax) F *= fMax / fm;
+            attSum += length(F);
+            float aJ = attMag[j];
+            float sJ = aJ > attMax ? attMax / aJ : 1.0;
+            F *= min(sI, sJ);
+            F1a += (1.0 - u) * F;
+            F2a += u * F;
+            F1r += (1.0 - u) * Frep;
+            F2r += u * Frep;
+        }
+    }
+    segF[2u * i] = vec4(F1a + F1r, 0.0);
+    segF[2u * i + 1u] = vec4(F2a + F2r, 0.0);
+    segTq[i] = tqA;
+    attMag[i] = attSum;
+}

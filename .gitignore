@@ -1,0 +1,7 @@
+build/
+dist/
+assets/
+pmf_data/pose_tmp.pdb
+__pycache__/
+*.pyc
+imgui.ini

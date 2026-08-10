@@ -1,0 +1,21 @@
+#version 460
+layout(local_size_x = 1024) in;
+layout(std430, binding = 0) readonly buffer In { uint a[]; };
+layout(std430, binding = 1) buffer Out { uint o[]; };
+layout(std430, binding = 2) buffer Sums { uint sums[]; };
+uniform int n;
+shared uint tmp[1024];
+void main() {
+    uint gid = gl_GlobalInvocationID.x, lid = gl_LocalInvocationID.x;
+    uint v = (gid < uint(n)) ? a[gid] : 0u;
+    tmp[lid] = v;
+    barrier();
+    for (uint off = 1u; off < 1024u; off <<= 1) {
+        uint t = (lid >= off) ? tmp[lid - off] : 0u;
+        barrier();
+        tmp[lid] += t;
+        barrier();
+    }
+    if (gid < uint(n)) o[gid] = tmp[lid] - v;
+    if (lid == 1023u) sums[gl_WorkGroupID.x] = tmp[lid];
+}

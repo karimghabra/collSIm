@@ -1,0 +1,25 @@
+#version 460
+// Bond-length projection (position based), alternating parity so no two
+// constraints touch the same bead in one pass.
+layout(local_size_x = 256) in;
+layout(std430, binding = 5) buffer PosNew { vec4 p[]; };
+uniform int nSeg;
+uniform int nBeads;
+uniform float segLen;
+uniform int parity;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(nSeg)) return;
+    int mol = int(i) / (nBeads - 1);
+    int k = int(i) % (nBeads - 1);
+    if ((k & 1) != parity) return;
+    int b = mol * nBeads + k;
+    vec3 x1 = p[b].xyz, x2 = p[b + 1].xyz;
+    vec3 d = x2 - x1;
+    float l = length(d);
+    if (l < 1e-6) return;
+    vec3 corr = (0.5 * (l - segLen) / l) * d;
+    p[b] = vec4(x1 + corr, 0.0);
+    p[b + 1] = vec4(x2 - corr, 0.0);
+}

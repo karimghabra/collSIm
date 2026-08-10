@@ -1,0 +1,78 @@
+#version 460
+// Verlet neighbor lists: per segment, collect candidate partners within
+// cutoff + segment extents + skin (conservative midpoint test). Rebuilt every
+// few steps; the force pass then iterates a compact exact list.
+layout(local_size_x = 128) in;
+layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
+layout(std430, binding = 1) readonly buffer Off { uint off[]; };
+layout(std430, binding = 2) readonly buffer Ids { uint ids[]; };
+layout(std430, binding = 10) buffer Stats { uint stats[]; };
+layout(std430, binding = 11) readonly buffer Cnt { uint cnt[]; };
+layout(std430, binding = 18) writeonly buffer NbrList { uint nbr[]; };
+layout(std430, binding = 19) writeonly buffer NbrCnt { uint nbrCnt[]; };
+
+uniform int nSeg;
+uniform int nBeads;
+uniform float segLen;
+uniform vec3 boxHalf;
+uniform vec3 cellSize;
+uniform vec3 gridDim;
+uniform float reach;          // cutoff + segLen + skin
+uniform int nbrCap;
+uniform int pbc;
+
+ivec3 cellOf(vec3 x) {
+    vec3 w = x + boxHalf;
+    if (pbc == 1) w = mod(mod(w, 2.0 * boxHalf) + 2.0 * boxHalf, 2.0 * boxHalf);
+    return clamp(ivec3(floor(w / cellSize)), ivec3(0), ivec3(gridDim) - 1);
+}
+vec3 mimg(vec3 d) {
+    if (pbc == 0) return d;
+    vec3 bs = 2.0 * boxHalf;
+    return d - bs * round(d / bs);
+}
+int cellIdx(ivec3 c) {
+    ivec3 gd = ivec3(gridDim);
+    return (c.z * gd.y + c.y) * gd.x + c.x;
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(nSeg)) return;
+    int molI = int(i) / (nBeads - 1);
+    int kI = int(i) % (nBeads - 1);
+    int bi = molI * nBeads + kI;
+    vec3 mid = 0.5 * (pos[bi].xyz + pos[bi + 1].xyz);
+    ivec3 cc = cellOf(mid);
+    ivec3 gd = ivec3(gridDim);
+    float r2 = reach * reach;
+    uint n = 0u;
+    uint base = i * uint(nbrCap);
+    for (int dz = -1; dz <= 1; ++dz)
+    for (int dy = -1; dy <= 1; ++dy)
+    for (int dx = -1; dx <= 1; ++dx) {
+        ivec3 c = cc + ivec3(dx, dy, dz);
+        if (pbc == 1) c = (c % gd + gd) % gd;
+        else if (any(lessThan(c, ivec3(0))) || any(greaterThanEqual(c, gd))) continue;
+        int ci = cellIdx(c);
+        uint b0 = off[ci], num = cnt[ci];
+        for (uint kk = 0u; kk < num; ++kk) {
+            uint j = ids[b0 + kk];
+            if (j == i || j >= uint(nSeg)) continue;
+            int molJ = int(j) / (nBeads - 1);
+            int kJ = int(j) % (nBeads - 1);
+            if (molJ == molI && abs(kJ - kI) <= 2) continue;
+            int bj = molJ * nBeads + kJ;
+            vec3 mj = 0.5 * (pos[bj].xyz + pos[bj + 1].xyz);
+            vec3 dv = mimg(mj - mid);
+            if (dot(dv, dv) > r2) continue;
+            if (n < uint(nbrCap)) {
+                nbr[base + n] = j;
+                n++;
+            } else {
+                atomicAdd(stats[3], 1u);
+            }
+        }
+    }
+    nbrCnt[i] = n;
+}

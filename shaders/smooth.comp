@@ -1,0 +1,14 @@
+#version 460
+// Display-only smoothing: exponential moving average of bead positions.
+// Physics always advances on the raw buffer; this feeds the renderer.
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
+layout(std430, binding = 16) buffer RenderPos { vec4 rpos[]; };
+uniform int nBead;
+uniform float alpha;
+uniform int reset;
+void main() {
+    uint b = gl_GlobalInvocationID.x;
+    if (b >= uint(nBead)) return;
+    rpos[b] = (reset == 1) ? pos[b] : mix(rpos[b], pos[b], alpha);
+}

@@ -1,0 +1,33 @@
+#version 460
+// Rotational Langevin step for the per-molecule twist DOF: gather torques
+// accumulated by the force pass on this molecule's segments.
+layout(local_size_x = 64) in;
+layout(std430, binding = 12) readonly buffer SegTq { float segTq[]; };
+layout(std430, binding = 13) buffer Theta { float theta[]; };
+uniform int nMol;
+uniform int nBeads;
+uniform float dt, gammaRot, kT;
+uniform uint seed;
+
+uvec4 pcg4d(uvec4 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+    v ^= v >> 16u;
+    v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+    return v;
+}
+
+void main() {
+    uint m = gl_GlobalInvocationID.x;
+    if (m >= uint(nMol)) return;
+    int base = int(m) * (nBeads - 1);
+    float tq = 0.0;
+    for (int k = 0; k < nBeads - 1; ++k) tq += segTq[base + k];
+    float tMax = 200.0;
+    tq = clamp(tq, -tMax, tMax);
+    uvec4 r = pcg4d(uvec4(m, seed, 0x2545F491u, 0x9E3779B9u));
+    float u1 = (float(r.x >> 8) + 0.5) / 16777216.0;
+    float u2 = (float(r.y >> 8) + 0.5) / 16777216.0;
+    float g = sqrt(-2.0 * log(u1)) * cos(6.2831853 * u2);
+    theta[m] += (dt / gammaRot) * tq + sqrt(2.0 * kT * dt / gammaRot) * g;
+}

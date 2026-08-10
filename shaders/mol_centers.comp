@@ -1,0 +1,15 @@
+#version 460
+// Per-molecule center positions for the CPU LOD pass (tiny readback).
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
+layout(std430, binding = 17) writeonly buffer Centers { vec4 centers[]; };
+uniform int nMol;
+uniform int nBeads;
+void main() {
+    uint m = gl_GlobalInvocationID.x;
+    if (m >= uint(nMol)) return;
+    vec3 c = vec3(0.0);
+    int b0 = int(m) * nBeads;
+    for (int i = 0; i < nBeads; i += 8) c += pos[b0 + i].xyz;
+    centers[m] = vec4(c / float((nBeads + 7) / 8), 0.0);
+}

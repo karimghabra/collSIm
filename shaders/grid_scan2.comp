@@ -1,0 +1,18 @@
+#version 460
+layout(local_size_x = 1024) in;
+layout(std430, binding = 2) buffer Sums { uint sums[]; };
+uniform int n;
+shared uint tmp[1024];
+void main() {
+    uint lid = gl_LocalInvocationID.x;
+    uint v = (lid < uint(n)) ? sums[lid] : 0u;
+    tmp[lid] = v;
+    barrier();
+    for (uint off = 1u; off < 1024u; off <<= 1) {
+        uint t = (lid >= off) ? tmp[lid - off] : 0u;
+        barrier();
+        tmp[lid] += t;
+        barrier();
+    }
+    if (lid < uint(n)) sums[lid] = tmp[lid] - v;
+}

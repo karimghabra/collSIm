@@ -1,0 +1,62 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate assets from source data
+        run: |
+          pip install numpy matplotlib
+          python tools/build_tropocollagen.py
+          python tools/interaction_profile.py
+          python tools/azimuthal_profile.py
+          python tools/azimuthal_profile.py --atelo
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          cmake --build build --config Release
+
+      - name: Stage package
+        shell: cmd
+        run: |
+          mkdir dist\collagenSim
+          copy build\Release\collagenSim.exe dist\collagenSim\
+          xcopy /E /I shaders dist\collagenSim\shaders
+          xcopy /E /I assets dist\collagenSim\assets
+          copy README.md dist\collagenSim\
+
+      - name: Zip archive
+        shell: pwsh
+        run: Compress-Archive -Path dist\collagenSim -DestinationPath dist\collagenSim-win64.zip
+
+      - name: Build installer (Inno Setup)
+        shell: cmd
+        run: |
+          choco install innosetup -y --no-progress
+          "%ProgramFiles(x86)%\Inno Setup 6\iscc.exe" installer\installer.iss
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            dist/collagenSim-win64.zip
+            dist/collagenSim-setup.exe
+
+      - name: Upload artifacts (non-tag runs)
+        uses: actions/upload-artifact@v4
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        with:
+          name: collagenSim-win64
+          path: dist/collagenSim-win64.zip

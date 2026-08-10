@@ -1,0 +1,13 @@
+#version 460
+layout(local_size_x = 1024) in;
+layout(std430, binding = 1) buffer Out { uint o[]; };
+layout(std430, binding = 2) readonly buffer Sums { uint sums[]; };
+layout(std430, binding = 3) buffer Cursor { uint cur[]; };
+uniform int n;
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    if (gid >= uint(n)) return;
+    uint v = o[gid] + sums[gl_WorkGroupID.x];
+    o[gid] = v;
+    cur[gid] = v;
+}

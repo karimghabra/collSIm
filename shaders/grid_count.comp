@@ -1,0 +1,29 @@
+#version 460
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
+layout(std430, binding = 1) buffer Count { uint cnt[]; };
+uniform int nSeg;
+uniform int nBeads;
+uniform vec3 boxHalf;
+uniform vec3 cellSize;
+uniform vec3 gridDim;
+uniform int pbc;
+
+ivec3 cellOf(vec3 x) {
+    vec3 w = x + boxHalf;
+    if (pbc == 1) w = mod(mod(w, 2.0 * boxHalf) + 2.0 * boxHalf, 2.0 * boxHalf);
+    return clamp(ivec3(floor(w / cellSize)), ivec3(0), ivec3(gridDim) - 1);
+}
+int cellIdx(ivec3 c) {
+    ivec3 gd = ivec3(gridDim);
+    return (c.z * gd.y + c.y) * gd.x + c.x;
+}
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(nSeg)) return;
+    int mol = int(i) / (nBeads - 1);
+    int k = int(i) % (nBeads - 1);
+    int b = mol * nBeads + k;
+    vec3 mid = 0.5 * (pos[b].xyz + pos[b + 1].xyz);
+    atomicAdd(cnt[cellIdx(cellOf(mid))], 1u);
+}

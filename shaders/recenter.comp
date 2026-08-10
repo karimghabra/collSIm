@@ -1,0 +1,25 @@
+#version 460
+// Whole-molecule periodic recentering: shift molecules whose center left the
+// primary box by integer box vectors. Applied identically to the physics and
+// display buffers so bonded terms and smoothing never see a jump.
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer Pos { vec4 pos[]; };
+layout(std430, binding = 16) buffer RenderPos { vec4 rpos[]; };
+uniform int nMol;
+uniform int nBeads;
+uniform vec3 boxHalf;
+void main() {
+    uint m = gl_GlobalInvocationID.x;
+    if (m >= uint(nMol)) return;
+    int b0 = int(m) * nBeads;
+    vec3 c = vec3(0.0);
+    for (int i = 0; i < nBeads; i += 8) c += pos[b0 + i].xyz;
+    c /= float((nBeads + 7) / 8);
+    vec3 bs = 2.0 * boxHalf;
+    vec3 shift = -bs * round(c / bs);
+    if (dot(shift, shift) < 1e-9) return;
+    for (int i = 0; i < nBeads; ++i) {
+        pos[b0 + i].xyz += shift;
+        rpos[b0 + i].xyz += shift;
+    }
+}

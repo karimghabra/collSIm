@@ -1,0 +1,100 @@
+#version 460
+// Overdamped Langevin step: gather segment pair forces, add discrete-WLC
+// bending, soft walls, thermal noise. Euler-Maruyama.
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
+layout(std430, binding = 3) readonly buffer SegF { vec4 segF[]; };
+layout(std430, binding = 5) writeonly buffer PosNew { vec4 posNew[]; };
+layout(std430, binding = 10) buffer Stats { uint stats[]; };
+layout(std430, binding = 24) readonly buffer Xlink { vec4 xlink[]; };
+uniform float xlinkK;
+
+uniform int nBead;
+uniform int nBeads;
+uniform float dt, gamma, kT, kBend, kWall, fMax;
+uniform vec3 boxHalf;
+uniform uint seed;
+uniform int pbc;
+
+uvec4 pcg4d(uvec4 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+    v ^= v >> 16u;
+    v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+    return v;
+}
+float toUnit(uint r) { return (float(r >> 8) + 0.5) / 16777216.0; }
+
+void main() {
+    uint b = gl_GlobalInvocationID.x;
+    if (b >= uint(nBead)) return;
+    int mol = int(b) / nBeads;
+    int k = int(b) % nBeads;
+    int base = mol * (nBeads - 1);
+    vec3 x = pos[b].xyz;
+
+    vec3 F = vec3(0.0);
+    if (k > 0)          F += segF[2 * (base + k - 1) + 1].xyz;
+    if (k < nBeads - 1) F += segF[2 * (base + k)].xyz;
+
+    // bending: angles centered at j = k-1, k, k+1
+    for (int j = k - 1; j <= k + 1; ++j) {
+        if (j < 1 || j > nBeads - 2) continue;
+        vec3 xm = pos[mol * nBeads + j - 1].xyz;
+        vec3 x0 = pos[mol * nBeads + j].xyz;
+        vec3 xp = pos[mol * nBeads + j + 1].xyz;
+        vec3 d1 = x0 - xm, d2 = xp - x0;
+        float l1 = length(d1), l2 = length(d2);
+        vec3 u1 = d1 / l1, u2 = d2 / l2;
+        float c = dot(u1, u2);
+        vec3 gm = -(u2 - c * u1) / l1;      // dc/dx_minus
+        vec3 gp =  (u1 - c * u2) / l2;      // dc/dx_plus
+        vec3 g0 = -(gm + gp);
+        // E = kBend (1 - c)  =>  F = +kBend * dc/dx
+        if (j == k)          F += kBend * g0;
+        else if (j == k - 1) F += kBend * gp;   // this bead is the '+' neighbor
+        else                 F += kBend * gm;   // this bead is the '-' neighbor
+    }
+
+    if (pbc == 0) {
+        vec3 over = max(abs(x) - boxHalf, vec3(0.0));
+        F -= sign(x) * over * kWall;
+    }
+
+    // covalent crosslink tethers (both partners store the bond: symmetric)
+    if (xlinkK > 0.0) {
+        vec4 xl = xlink[b];
+        for (int s = 0; s < 2; ++s) {
+            int pt = floatBitsToInt(s == 0 ? xl.x : xl.z);
+            if (pt < 0) continue;
+            float rest = s == 0 ? xl.y : xl.w;
+            vec3 dv = pos[pt].xyz - x;
+            if (pbc == 1) {
+                vec3 bs = 2.0 * boxHalf;
+                dv -= bs * round(dv / bs);
+            }
+            float l = length(dv);
+            if (l > 1e-6) F += xlinkK * (l - rest) * dv / l;
+        }
+    }
+
+    uvec4 r = pcg4d(uvec4(b, seed, 0x9E3779B9u, 0x85EBCA6Bu));
+    float u1r = toUnit(r.x), u2r = toUnit(r.y);
+    float u3r = toUnit(r.z), u4r = toUnit(r.w);
+    float m1 = sqrt(-2.0 * log(u1r));
+    float m2 = sqrt(-2.0 * log(u3r));
+    vec3 g = vec3(m1 * cos(6.2831853 * u2r),
+                  m1 * sin(6.2831853 * u2r),
+                  m2 * cos(6.2831853 * u4r));
+
+    // displacement clamp: two beads may close at most ~2*dxMax per step,
+    // which must stay well inside the repulsive shell (no tunneling)
+    vec3 dx = (dt / gamma) * F + sqrt(2.0 * kT * dt / gamma) * g;
+    float dl = length(dx);
+    const float dxMax = 0.35;
+    if (dl > dxMax) {
+        dx *= dxMax / dl;
+        atomicAdd(stats[4], 1u);   // physicality telemetry: clamped moves
+    }
+    posNew[b] = vec4(x + dx, 0.0);
+}
