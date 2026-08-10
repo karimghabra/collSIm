@@ -440,10 +440,10 @@ void Sim::buildGrid() {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuf);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridOffset);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridIds);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, nbrListBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, nbrCntBuf);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, statsBuf);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, gridCount);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 18, nbrListBuf);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 19, nbrCntBuf);
     glDispatchCompute((nSeg() + 127) / 128, 1, 1);
     barrier();
 }
@@ -498,16 +498,13 @@ void Sim::step(int nSteps) {
         if (statsOn)
             glClearNamedBufferData(statsBuf, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridOffset);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridIds);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, nbrListBuf);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, nbrCntBuf);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, segFBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, statsBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, gridCount);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, attMagBuf);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, frameBuf);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, statsBuf);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, segTqBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 18, nbrListBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 19, nbrCntBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 22, attMagBuf);
         glBindTextureUnit(0, texPar);
         glBindTextureUnit(1, texAp);
         glBindTextureUnit(2, texPar2);
@@ -529,10 +526,10 @@ void Sim::step(int nSteps) {
         prInteg.set("seed", (unsigned)(p.seed + (totalSteps & 0x7fffffff)));
         prInteg.set("xlinkK", nXlinks > 0 ? p.xlinkK : 0.f);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuf);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, xlinkBuf);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, segFBuf);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, posBuf2);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, statsBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 24, xlinkBuf);
         glDispatchCompute((nBead() + 255) / 256, 1, 1);
         barrier();
 
@@ -571,7 +568,7 @@ void Sim::step(int nSteps) {
             prRecenter.set("nBeads", p.nBeads);
             prRecenter.set("boxHalf", p.boxHalf);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuf);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 16, renderPosBuf);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, renderPosBuf);
             glDispatchCompute((p.nMol + 63) / 64, 1, 1);
             barrier();
         }
@@ -734,10 +731,10 @@ void Sim::mcPass(int nPasses) {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridIds);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, frameBuf);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, statsBuf);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, nbrListBuf);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, nbrCntBuf);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, gridCount);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, thetaBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 18, nbrListBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 19, nbrCntBuf);
         glBindTextureUnit(0, texPar);
         glBindTextureUnit(1, texAp);
         glBindTextureUnit(2, texPar2);
@@ -764,7 +761,7 @@ void Sim::smoothForDisplay(float alpha, bool reset) {
     prSmooth.set("alpha", alpha);
     prSmooth.set("reset", reset ? 1 : 0);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuf);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 16, renderPosBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, renderPosBuf);
     glDispatchCompute((nBead() + 255) / 256, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
@@ -774,7 +771,7 @@ void Sim::updateCenters(GLuint posBuffer) {
     prCenters.set("nMol", p.nMol);
     prCenters.set("nBeads", p.nBeads);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuffer ? posBuffer : posBuf);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 17, centersBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, centersBuf);
     glDispatchCompute((p.nMol + 63) / 64, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
 }

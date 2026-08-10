@@ -6,8 +6,8 @@ layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
 layout(std430, binding = 6) readonly buffer Frames { vec4 frm[]; };
 layout(std430, binding = 7) readonly buffer Atoms { vec4 atom[]; };
 layout(std430, binding = 8) readonly buffer NearIds { uint nearId[]; };
-layout(std430, binding = 20) readonly buffer NearOffs { vec4 nearOff[]; };
-layout(std430, binding = 21) readonly buffer Ages { float spawnSec[]; };
+layout(std430, binding = 1) readonly buffer NearOffs { vec4 nearOff[]; };
+layout(std430, binding = 2) readonly buffer Ages { float spawnSec[]; };
 uniform float nowSec;
 
 uniform mat4 view, proj;

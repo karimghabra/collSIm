@@ -8,8 +8,8 @@ layout(std430, binding = 1) readonly buffer Off { uint off[]; };
 layout(std430, binding = 2) readonly buffer Ids { uint ids[]; };
 layout(std430, binding = 10) buffer Stats { uint stats[]; };
 layout(std430, binding = 11) readonly buffer Cnt { uint cnt[]; };
-layout(std430, binding = 18) writeonly buffer NbrList { uint nbr[]; };
-layout(std430, binding = 19) writeonly buffer NbrCnt { uint nbrCnt[]; };
+layout(std430, binding = 3) writeonly buffer NbrList { uint nbr[]; };
+layout(std430, binding = 4) writeonly buffer NbrCnt { uint nbrCnt[]; };
 
 uniform int nSeg;
 uniform int nBeads;

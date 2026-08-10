@@ -2,7 +2,7 @@
 // Far-LOD: one flat-shaded capsule impostor per filament segment.
 layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
 layout(std430, binding = 9) readonly buffer NearMask { uint nearMask[]; };
-layout(std430, binding = 21) readonly buffer Ages { float spawnSec[]; };
+layout(std430, binding = 2) readonly buffer Ages { float spawnSec[]; };
 uniform float nowSec;
 
 uniform mat4 view, proj;

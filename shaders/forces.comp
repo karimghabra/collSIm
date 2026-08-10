@@ -4,11 +4,11 @@
 // textures (R = electrostatic, G = hydrophobic; negative = attractive).
 layout(local_size_x = 128) in;
 layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
+layout(std430, binding = 1) readonly buffer NbrList { uint nbr[]; };
+layout(std430, binding = 2) readonly buffer NbrCnt { uint nbrCnt[]; };
 layout(std430, binding = 3) writeonly buffer SegF { vec4 segF[]; };
+layout(std430, binding = 4) buffer AttMag { float attMag[]; };
 layout(std430, binding = 10) buffer Stats { uint stats[]; };
-layout(std430, binding = 18) readonly buffer NbrList { uint nbr[]; };
-layout(std430, binding = 19) readonly buffer NbrCnt { uint nbrCnt[]; };
-layout(std430, binding = 22) buffer AttMag { float attMag[]; };
 uniform int statsOn;
 uniform int nbrCap;
 uniform int pbc;

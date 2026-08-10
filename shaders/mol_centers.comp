@@ -2,7 +2,7 @@
 // Per-molecule center positions for the CPU LOD pass (tiny readback).
 layout(local_size_x = 64) in;
 layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
-layout(std430, binding = 17) writeonly buffer Centers { vec4 centers[]; };
+layout(std430, binding = 1) writeonly buffer Centers { vec4 centers[]; };
 uniform int nMol;
 uniform int nBeads;
 void main() {

@@ -81,8 +81,8 @@ void Renderer::draw(Sim& sim, const glm::mat4& view, const glm::mat4& proj, floa
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, atomsSSBO);
     if (nearIds) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, nearIds);
     if (nearMask) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, nearMask);
-    if (nearOffs) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 20, nearOffs);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 21, sim.ageBuf);
+    if (nearOffs) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, nearOffs);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, sim.ageBuf);
 
     int nImg = 1, imgMode = 0;
     if (sim.p.pbc == 1 && opts.repeats == 1) { nImg = 3; imgMode = 1; }

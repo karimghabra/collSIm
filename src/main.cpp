@@ -1,6 +1,12 @@
 // collagenSim — real-time GPU Brownian dynamics of type I collagen fibril
 // self-assembly with full-atom rendering of every tropocollagen.
 #include <glad/gl.h>
+
+// hybrid-graphics laptops: request the discrete GPU
+extern "C" {
+__declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
+__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <imgui.h>
