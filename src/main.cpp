@@ -35,6 +35,9 @@ static bool g_rotating = false, g_panning = false;
 static double g_mx = 0, g_my = 0;
 static int g_appMode = 0;          // 0 BD, 1 MC docking, 2 KMC
 static McDock g_mcd;
+static int g_mcdTestN = 300;
+static int g_mcdTestSweeps = 2000;
+static bool g_mcdAnneal = false;
 static int g_mcdSweeps = 4;
 
 static void mouseButton(GLFWwindow* w, int b, int a, int) {
@@ -218,24 +221,66 @@ int main(int argc, char** argv) {
            tmpl.natoms, tmpl.lengthNm, tmpl.dPeriodNm, prof2.nD, prof2.nPhi, prof2.nPhi);
 
     for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--mclinks" && i + 1 < argc)
+            g_mcd.p.nLinks = atoi(argv[i + 1]);
+        if (std::string(argv[i]) == "--mcbend" && i + 1 < argc)
+            g_mcd.p.bendOn = (float)atof(argv[i + 1]);
+        if (std::string(argv[i]) == "--mcnmol" && i + 1 < argc)
+            g_mcdTestN = atoi(argv[i + 1]);
+        if (std::string(argv[i]) == "--mcsweeps" && i + 1 < argc)
+            g_mcdTestSweeps = atoi(argv[i + 1]);
+        if (std::string(argv[i]) == "--mcnodock") g_mcd.p.dockMoves = false;
+        if (std::string(argv[i]) == "--mcanneal") g_mcdAnneal = true;
         if (std::string(argv[i]) == "--mcdocktest") {
             g_mcd.buildPoseLibrary(basis, prof2.par, 7.4f, 2.5f, 1.0f,
                                    haveCorr ? &corrTab : nullptr);
-            g_mcd.initFromScatter(300, {120, 120, 210}, tmpl.lengthNm, true, 1234);
+            float bxy = g_mcdTestN <= 8 ? 20.f : 120.f;   // tight box for pair tests
+            g_mcd.initFromScatter(g_mcdTestN, {bxy, bxy, 210}, tmpl.lengthNm, true, 1234);
+            printf("links %d (%.0f nm), bend x%.2f -> Lp %.0f nm, N %d\n",
+                   g_mcd.p.nLinks, g_mcd.linkLen, g_mcd.p.bendOn,
+                   g_mcd.p.bendOn * g_mcd.persistLen, g_mcdTestN);
             double t0 = glfwGetTime();
-            for (int rep = 0; rep < 20; ++rep) {
+            int nrep = std::max(1, g_mcdTestSweeps / 100);
+            for (int rep = 0; rep < nrep; ++rep) {
+                if (g_mcdAnneal && nrep > 1)   // simulated anneal 3 kT -> 1 kT
+                    g_mcd.p.tempFactor = 1.f + 2.f * (1.f - float(rep) / (nrep - 1));
                 g_mcd.sweep(100);
                 float ms = 0;
                 int nc = g_mcd.clusterCount(ms);
                 printf("sweep %5lld | t=%.3f ms | bound %.0f%% | clusters %d (%.1f) | "
-                       "band %.2f | acc %.1f%%\n",
+                       "band %.2f Dfrac %.0f%% | acc %.1f%% (T%.1f D%.1f S%.1f P%.1f)\n",
                        (long long)g_mcd.sweepsDone, g_mcd.simTimeNs * 1e-6,
                        g_mcd.boundFraction() * 100.f, nc, ms, g_mcd.bandCoherence(),
-                       g_mcd.proposed ? 100.0 * g_mcd.accepted / g_mcd.proposed : 0.0);
+                       g_mcd.dFraction() * 100.f,
+                       g_mcd.proposed ? 100.0 * g_mcd.accepted / g_mcd.proposed : 0.0,
+                       100.0 * g_mcd.accWhole / std::max(1.0, (double)g_mcd.proposed),
+                       100.0 * g_mcd.accDock / std::max(1.0, (double)g_mcd.proposed),
+                       100.0 * g_mcd.accSlide / std::max(1.0, (double)g_mcd.proposed),
+                       100.0 * g_mcd.accPivot / std::max(1.0, (double)g_mcd.proposed));
             }
             double el = glfwGetTime() - t0;
-            printf("2000 sweeps in %.1f s = %.0f sweeps/s -> %.2f sim-seconds per wall-hour\n",
-                   el, 2000.0 / el, 2000.0 / el * g_mcd.stepTimeNs * 1e-9 * 3600.0);
+            if (g_mcdTestN <= 8) g_mcd.dumpContacts(40);
+            {   // render path: bond spacing must hold and chains must bend
+                std::vector<glm::vec4> bt;
+                const int nb = 96;
+                float sl = tmpl.lengthNm / (nb - 1);
+                g_mcd.writeBeads(bt, nb, sl);
+                float maxDev = 0, sumR = 0;
+                int nm = std::min((int)g_mcd.mols.size(), 50);
+                for (int m = 0; m < nm; ++m) {
+                    for (int i = 0; i + 1 < nb; ++i) {
+                        glm::vec3 a(bt[m * nb + i]), b(bt[m * nb + i + 1]);
+                        maxDev = std::max(maxDev, fabsf(glm::length(b - a) - sl));
+                    }
+                    glm::vec3 e0(bt[m * nb]), e1(bt[m * nb + nb - 1]);
+                    sumR += glm::length(e1 - e0);
+                }
+                printf("beads: max bond deviation %.4f nm | <Ree>/L %.2f (WLC ~0.57 free)\n",
+                       maxDev, sumR / nm / tmpl.lengthNm);
+            }
+            double nsw = nrep * 100.0;
+            printf("%.0f sweeps in %.1f s = %.0f sweeps/s -> %.2f sim-seconds per wall-hour\n",
+                   nsw, el, nsw / el, nsw / el * g_mcd.stepTimeNs * 1e-9 * 3600.0);
             return 0;
         }
         if (std::string(argv[i]) == "--kmctest") {
@@ -469,10 +514,12 @@ int main(int argc, char** argv) {
             static bool mcdInit = false;
             static float lastPH = -1, lastEl = -1, lastHy = -1;
             static int lastAtelo = -1;
-            ImGui::TextWrapped("Minima-hopping over the precomputed docking-pose "
-                               "library (registry-table local minima); Metropolis "
-                               "with Ni/Nj correction; steps time-calibrated via "
-                               "rod diffusion. Rigid molecules (v1).");
+            ImGui::TextWrapped("Segmental docking MC: each molecule is a chain of "
+                               "persistence-length links. Moves are adaptive rigid "
+                               "transport, link-dock hops onto pose-library minima "
+                               "(chain dragged along), and joint pivots; energies are "
+                               "contact integrals of the measured registry kernel, "
+                               "Metropolis with Hastings/Ni-Nj corrections.");
             if (ImGui::Button(mcdInit ? "reset MC system" : "start MC system") || !mcdInit) {
                 if (sim.p.pH != lastPH || sim.p.epsEl != lastEl || sim.p.epsHy != lastHy ||
                     sim.p.atelo != lastAtelo || g_mcd.poses.empty()) {
@@ -490,10 +537,18 @@ int main(int argc, char** argv) {
             }
             if (ImGui::Button(running ? "pause##mcd" : "run##mcd")) running = !running;
             ImGui::SliderInt("sweeps/frame", &g_mcdSweeps, 1, 40);
-            if (ImGui::SliderFloat("hop scale (nm)", &g_mcd.p.sigmaFree, 2.f, 40.f))
-                ;   // step time recomputed inside sweep
+            ImGui::SliderInt("links/molecule", &g_mcd.p.nLinks, 1, 12);
+            ImGui::TextDisabled("link %.0f nm (Lp %.0f nm) - reset to apply",
+                                g_mcd.linkLen, g_mcd.persistLen);
+            ImGui::SliderFloat("hop scale (nm)", &g_mcd.p.sigmaFree, 2.f, 40.f);
             ImGui::SliderFloat("temperature factor", &g_mcd.p.tempFactor, 0.2f, 4.f);
             ImGui::SliderFloat("capture radius (nm)", &g_mcd.p.captureR, 3.f, 15.f);
+            ImGui::SliderFloat("pivot amplitude (rad)", &g_mcd.p.pivotAmp, 0.02f, 0.8f);
+            ImGui::SliderFloat("bending stiffness x", &g_mcd.p.bendOn, 0.f, 6.f);
+            ImGui::TextDisabled("  -> effective Lp %.0f nm", g_mcd.p.bendOn * g_mcd.persistLen);
+            ImGui::Checkbox("dock hops (biased basin finding)", &g_mcd.p.dockMoves);
+            if (!g_mcd.p.dockMoves)
+                ImGui::TextDisabled("  strictly reversible chain (transport/slide/pivot)");
             double tNs = g_mcd.simTimeNs;
             const char* unit = "ns";
             double tv = tNs;
@@ -508,11 +563,16 @@ int main(int argc, char** argv) {
             ImGui::Text("acceptance %.1f%% | poses %zu",
                         g_mcd.proposed ? 100.0 * g_mcd.accepted / g_mcd.proposed : 0.0,
                         g_mcd.poses.size());
+            double pr = std::max(1.0, (double)g_mcd.proposed);
+            ImGui::Text("accepted: transport %.1f | dock %.1f | slide %.1f | pivot %.1f (%%all)",
+                        100.0 * g_mcd.accWhole / pr, 100.0 * g_mcd.accDock / pr,
+                        100.0 * g_mcd.accSlide / pr, 100.0 * g_mcd.accPivot / pr);
             float meanSz = 0;
             int nc = g_mcd.clusterCount(meanSz);
-            ImGui::Text("bound %.0f%% | clusters %d (mean %.1f) | band %.2f",
-                        g_mcd.boundFraction() * 100.f, nc, meanSz, g_mcd.bandCoherence());
-            ImGui::TextDisabled("v2 path: per-segment docking frames (flexibility)");
+            ImGui::Text("bound %.0f%% | clusters %d (mean %.1f)",
+                        g_mcd.boundFraction() * 100.f, nc, meanSz);
+            ImGui::Text("band coherence %.2f | D-fraction %.0f%%",
+                        g_mcd.bandCoherence(), g_mcd.dFraction() * 100.f);
             ImGui::End();
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

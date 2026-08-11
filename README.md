@@ -185,16 +185,68 @@ self-crush; timestep displacement must be clamped below the excluded-volume
 shell or filaments tunnel; and a segment cell grid must use cell ≥ segment
 length + cutoff or contacts silently vanish.
 
-## Simulation methods FAQ
+## Three engines, three timescales
 
-**Why Brownian dynamics instead of kinetic Monte Carlo?** KMC needs a
-discrete event catalog with computable rates; continuum diffusion + bending +
-sliding of semiflexible filaments is exactly what you cannot discretize
-without a lattice (which would destroy semiflexibility and smooth motion).
-BD gives the same Boltzmann statistics with physically meaningful kinetics
-and is embarrassingly GPU-parallel. A KMC-flavored layer (explicit bond
-on/off events with Bell rates) can be added on top later without changing
-the architecture.
+The same measured interaction tables drive three independent simulation
+methodologies, each in its own tab, because no single method spans molecular
+detail and hours of fibrillogenesis:
+
+| Tab | Method | Reaches | Trades away |
+|---|---|---|---|
+| BD | overdamped Langevin on 96-bead filaments, GPU | ~µs | wall-clock: hours of assembly is out of reach |
+| MC | segmental docking Monte Carlo (below) | ~ms/sweep-calibrated | dynamics are moves, not trajectories |
+| KMC | registry-resolved Gillespie kinetics | hours | molecules are events, not geometry |
+
+BD has the trustworthy clock and the least approximation; KMC is the only one
+that reaches real fibrillation times (30–120 min lag). The gap is ~10⁸: three
+hours of assembly at BD's timestep is roughly 115 years of wall clock.
+
+### Segmental docking MC (v0.3.0)
+
+Following `docs/segmental_docking_mc.md`, each molecule is a chain of
+persistence-length **links** (default 5 × 58 nm) — rigid docking bodies joined
+by discrete-WLC hinges (κ = Lp/ℓ, verified: ⟨cos θ⟩ = 0.37 vs the exact
+e^(−ℓ/Lp) = 0.38). Link-pair energy is the **contact integral** of the merged
+registry kernel: nine samples along each link's overlap, each contributing
+env(d)·U(Δ_local, φa, φb) weighted by arc length, so a tilted or bent contact
+prices itself through the stagger ramp rather than through any angular falloff
+term (the tilt-series verdict — see below). Moves are:
+
+- **transport** — rigid translate/rotate, with an adaptive step (free
+  molecules stride 3× further than crowded ones) and the Hastings volume-ratio
+  correction that state-dependent widths require;
+- **dock hop** — place one link at a pose-library minimum on a neighbor link
+  and drag the rest of the chain rigidly, so internal bend energy is exactly
+  preserved and acceptance prices only the new contacts;
+- **axial slide** — translate along a link's own tangent, including ±D and
+  ±2D jumps; sweeps a thin tube, so it is the move that still works inside a
+  dense gel and it is what anneals registry;
+- **pivot** — rotate everything past one joint, paying only that joint's bend.
+
+Sim time is calibrated from rod translational diffusion (Δt = σ²/6D) on the
+base transport hop; adaptive hops cover more ground than that credits, so
+reported MC time is a **lower bound**. Dock hops are the source paper's biased
+basin-finding move — the placement is deterministic, so its exact reverse is
+not a library placement. The other three moves are reversible; the MC tab has
+a switch to run with dock hops off for a strictly detailed-balance chain.
+
+**What it reproduces.** An isolated pair of 5-link molecules docks at −1.98 D
+with all five link contacts reporting the same stagger — the rigid v1 model
+parks at zero stagger instead, so flexibility *improves* pair registration.
+The hinges reproduce the target persistence length (⟨cos θ⟩ = 0.37 vs the
+exact e^(−ℓ/Lp) = 0.38), and the bead polyline handed to the renderer holds
+bond length to < 0.001 nm while showing real curvature (⟨R_ee⟩/L ≈ 0.85 bound,
+against 0.57 for a free chain — bound molecules straighten, as they should).
+
+In crowds, registration is **density-limited**, which is the honest result: at
+2 mg/mL the system anneals to band coherence 0.56 / D-fraction 64% and is
+still climbing at 4k sweeps, while a 5.9 mg/mL quench percolates into a single
+cluster before it can register and reaches only 0.42 / 48%. This mirrors the
+KMC tab, where slowing growth tenfold improves band order, and the wet-lab
+fact that fast concentrated quenches give poorly banded aggregates. The rigid
+limit scores higher (0.85 / 87%) because rods reach global phase order that
+flexible chains reach only slowly — a sampling gap, not an energetic one.
+Throughput: 134 sweeps/s at N=100, 22 at N=300 (5 links), 77 rigid.
 
 ## Data provenance
 

@@ -78,3 +78,38 @@ flexible molecules as rigid bodies.
 - **Sterics/topology**: the existing capsule excluded-volume machinery and
   collision checks apply per-link directly.
 - Natural home: this replaces the rigid-molecule v1 in the MC (docking) tab.
+
+## As built (v0.3.0)
+
+Implemented in `src/mcdock.{h,cpp}`. Where the build departs from the proposal,
+it is because measurement said so:
+
+- **One kernel, not n(n+1)/2 tables.** The proposal's per-link-pair lookups are
+  the same function evaluated on different contour windows, so the build keeps
+  a single merged kernel U(Δ, φa, φb) and passes each link pair its own contour
+  offsets. Adding links costs nothing in table memory, so link count became a
+  live UI slider instead of a compile-time commitment.
+- **Contact integral instead of one quaternion→energy lookup per pair.** Nine
+  arc-length samples per link pair, each with its own local stagger and facing
+  angles. This is what makes bent and tilted contacts price correctly — and it
+  follows from the tilt series, which found no universal angular falloff to
+  put in a lookup: the angular physics is already in the stagger ramp.
+- **Scheme (b) is primary, with rigid transport retained.** Per-link dock hops
+  and pivots do the conformational work as proposed. Whole-molecule rigid moves
+  are kept for transport only: center-of-mass diffusion built from link moves
+  alone is Rouse-like (~N² sweeps to move one molecular length) and, unlike a
+  rigid translation, has no σ²/6D mapping to give the MC clock a calibration.
+  Scheme (a)'s BD-relax interleave is not implemented; the pivot move covers
+  the chain relaxation it was meant to provide.
+- **The chain-response Jacobian the notes worried about is avoided.** Dock hops
+  drag the chain rigidly rather than deforming it, so internal bend energy is
+  unchanged by construction and no configurational-bias weights are needed.
+  The state-dependent transport width does carry an explicit Hastings ratio.
+- **Added move not in the proposal: axial slide.** Translation along a link's
+  own tangent, including ±D and ±2D jumps. Registry annealing in a dense gel
+  turned out to be the binding constraint — dock hops are almost all rejected
+  once the system percolates, because they sweep too much volume.
+
+Verified: an isolated pair of 5-link molecules docks at −1.98 D with all five
+link contacts agreeing (the rigid v1 parks at zero stagger instead), and the
+discrete-WLC hinges reproduce ⟨cos θ⟩ = 0.37 against the exact 0.38.
