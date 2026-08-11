@@ -93,28 +93,35 @@ def excise(res, s0_nm, alpha, out_lines, chain_offset):
     return nres
 
 
-def build_pose_pdb(res, sA, delta, gap, alpha, beta, path):
-    """Segment A at origin; segment B (contour window sA - delta) at +x gap."""
+def build_pose_pdb(res, sA, delta, gap, alpha, beta, path, tilt=0.0):
+    """Segment A at origin; segment B (contour window sA - delta) at +x gap,
+    optionally tilted about the gap (x) axis so contact stays at the centers."""
     lines = []
     excise(res, sA, alpha, lines, "A")
     linesB = []
     excise(res, sA - delta, beta, linesB, "D")
+    ct, st = np.cos(tilt), np.sin(tilt)
     for ln in linesB:
         if ln.startswith("ATOM"):
-            x = float(ln[30:38]) + gap * 10.0
-            ln = ln[:30] + f"{x:8.3f}" + ln[38:]
+            x = float(ln[30:38])
+            y = float(ln[38:46])
+            z = float(ln[46:54])
+            yr = ct * y - st * z
+            zr = st * y + ct * z
+            ln = (ln[:30] + f"{x + gap * 10.0:8.3f}{yr:8.3f}{zr:8.3f}" + ln[54:])
         lines.append(ln)
     with open(path, "w") as fh:
         fh.writelines(lines)
         fh.write("END\n")
 
 
-def run_pose(res, sA, delta, gap, alpha, beta, ns=0.3, platform_pref="OpenCL"):
+def run_pose(res, sA, delta, gap, alpha, beta, ns=0.3, tilt=0.0,
+             platform_pref="OpenCL"):
     from openmm import app, unit, LangevinMiddleIntegrator, CustomExternalForce, Platform
     from pdbfixer import PDBFixer
 
     tmp = os.path.join(OUT, "pose_tmp.pdb")
-    build_pose_pdb(res, sA, delta, gap, alpha, beta, tmp)
+    build_pose_pdb(res, sA, delta, gap, alpha, beta, tmp, tilt=tilt)
     fixer = PDBFixer(filename=tmp)
     fixer.findMissingResidues()
     fixer.missingResidues = {}
@@ -155,17 +162,22 @@ def run_pose(res, sA, delta, gap, alpha, beta, ns=0.3, platform_pref="OpenCL"):
 
     nChunks = max(10, int(ns * 1000))
     acc = np.zeros(3)
+    accT = np.zeros(3)
+    cB = np.mean([x0[i] for i in bIdx], axis=0)
     nS = 0
     for _ in range(nChunks):
         simu.step(500)                     # 1 ps between samples
         st = simu.context.getState(getPositions=True)
         pns = st.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
         for i in bIdx:
-            acc += pns[i] - x0[i]
+            d = pns[i] - x0[i]
+            acc += d
+            accT += np.cross(x0[i] - cB, d)
         nS += 1
-    # mean force on B from restraint offsets, kJ/mol/nm -> kT/nm
+    # mean force / torque on B from restraint offsets, kJ/mol -> kT units
     F = KREST * (acc / nS) / KT_KJ
-    return F, plat.getName()
+    T = KREST * (accT / nS) / KT_KJ       # kT per radian, about B's center
+    return F, T, plat.getName()
 
 
 def gen_poses():
@@ -213,7 +225,7 @@ def main():
     elif cmd == "smoke":
         import time
         t0 = time.time()
-        F, plat = run_pose(res, 130.0, 66.88, 1.5, 0.0, 0.0, ns=0.05)
+        F, _, plat = run_pose(res, 130.0, 66.88, 1.5, 0.0, 0.0, ns=0.05)
         print(f"platform {plat} | pose (sA=130, D-stagger, gap 1.5): "
               f"F = ({F[0]:+.2f}, {F[1]:+.2f}, {F[2]:+.2f}) kT/nm "
               f"| {time.time()-t0:.0f} s")
@@ -239,7 +251,7 @@ def main():
             if key in done:
                 continue
             try:
-                F, _ = run_pose(res, *key, ns=ns)
+                F, _, _ = run_pose(res, *key, ns=ns)
             except Exception as ex:
                 print(f"[{i+1}/{len(poses)}] SKIP {key}: {ex}")
                 continue
@@ -248,6 +260,97 @@ def main():
                          f"{F[0]:.4f},{F[1]:.4f},{F[2]:.4f},{ns}\n")
             print(f"[{i+1}/{len(poses)}] delta={ps['delta']:.1f} gap={ps['gap']} "
                   f"-> Fz {F[2]:+.2f} Fx {F[0]:+.2f} kT/nm")
+            sys.stdout.flush()
+    elif cmd == "tilt":
+        # angular series: calibrate the tilt falloff of the registry
+        # interaction and measure the alignment torque; own CSV, resumable
+        ns = 1.0
+        if "--ns" in sys.argv:
+            ns = float(sys.argv[sys.argv.index("--ns") + 1])
+        D = 66.88
+        poses = []
+        for dz in (D, 2 * D):
+            for sA in ((80.0, 180.0) if dz < 100 else (180.0, 230.0)):
+                for ab in ((0.0, 0.0), (1.57, 1.57)):
+                    for tl in (0.0, 0.087, 0.175, 0.349, 0.785, 1.571):
+                        for gp in (1.5, 6.0):     # contact + baseline
+                            poses.append((sA, round(dz, 2), gp, ab[0], ab[1],
+                                          round(tl, 3)))
+        csv = os.path.join(OUT, "forces_tilt.csv")
+        done = set()
+        if os.path.exists(csv):
+            for ln in open(csv).readlines()[1:]:
+                t = ln.split(",")
+                done.add(tuple(float(x) for x in t[:6]))
+        else:
+            with open(csv, "w") as fh:
+                fh.write("sA,delta,gap,alpha,beta,tilt,Fx,Fy,Fz,Tx,ns\n")
+        for i, key in enumerate(poses):
+            if key in done:
+                continue
+            try:
+                F, T, _ = run_pose(res, key[0], key[1], key[2], key[3], key[4],
+                                   ns=ns, tilt=key[5])
+            except Exception as ex:
+                print(f"[{i+1}/{len(poses)}] SKIP {key}: {ex}")
+                continue
+            with open(csv, "a") as fh:
+                fh.write(",".join(str(k) for k in key) +
+                         f",{F[0]:.4f},{F[1]:.4f},{F[2]:.4f},{T[0]:.4f},{ns}\n")
+            print(f"[{i+1}/{len(poses)}] d={key[1]:.1f} tilt={key[5]:.2f} "
+                  f"gap={key[2]} -> Fx {F[0]:+.2f} Fz {F[2]:+.2f} Tx {T[0]:+.2f}")
+            sys.stdout.flush()
+    elif cmd == "tiltdeep":
+        # depth over breadth: replicate the strongest-attraction contexts at
+        # fine angles for a statistically resolvable falloff curve
+        import csv as csvmod
+        rows = list(csvmod.DictReader(open(os.path.join(OUT, "forces_tilt.csv"))))
+        ctx = {}
+        for r in rows:
+            key = (float(r["sA"]), float(r["delta"]), float(r["alpha"]),
+                   float(r["beta"]), float(r["tilt"]))
+            ctx.setdefault(key[:4], {}).setdefault(key[4], {})[float(r["gap"])] = r
+        ranked = []
+        for c, tilts in ctx.items():
+            g = tilts.get(0.0, {})
+            if 1.5 in g and 6.0 in g:
+                f0 = float(g[1.5]["Fx"]) - float(g[6.0]["Fx"])
+                if f0 < -5.0:            # strong attraction only
+                    ranked.append((f0, c))
+        ranked.sort()
+        picks = [c for _, c in ranked[:2]]
+        print("deep contexts:", picks)
+        out = os.path.join(OUT, "forces_tiltdeep.csv")
+        done = set()
+        if os.path.exists(out):
+            for ln in open(out).readlines()[1:]:
+                t = ln.split(",")
+                done.add((float(t[0]), float(t[1]), float(t[2]), float(t[3]),
+                          float(t[4]), float(t[5]), int(t[6])))
+        else:
+            with open(out, "w") as fh:
+                fh.write("sA,delta,gap,alpha,beta,tilt,rep,Fx,Fy,Fz,Tx,ns\n")
+        jobs = []
+        for c in picks:
+            for tl in (0.0, 0.087, 0.175, 0.262, 0.349, 0.524):
+                for rep in range(3):
+                    jobs.append((c[0], c[1], 1.5, c[2], c[3], round(tl, 3), rep))
+                if tl not in (0.0, 0.087, 0.175, 0.349):   # new baselines
+                    jobs.append((c[0], c[1], 6.0, c[2], c[3], round(tl, 3), 0))
+        for i, key in enumerate(jobs):
+            if key in done:
+                continue
+            try:
+                F, T, _ = run_pose(res, key[0], key[1], key[2], key[3], key[4],
+                                   ns=2.0, tilt=key[5])
+            except Exception as ex:
+                print(f"[{i+1}/{len(jobs)}] SKIP {key}: {ex}")
+                continue
+            with open(out, "a") as fh:
+                fh.write(",".join(str(k) for k in key) +
+                         f",{F[0]:.4f},{F[1]:.4f},{F[2]:.4f},{T[0]:.4f},2.0\n")
+            print(f"[{i+1}/{len(jobs)}] tilt={key[5]:.2f} rep={key[6]} gap={key[2]} "
+                  f"-> Fx {F[0]:+.2f} Tx {T[0]:+.2f}")
             sys.stdout.flush()
     else:
         print(__doc__)
