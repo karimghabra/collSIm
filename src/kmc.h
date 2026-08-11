@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <vector>
+#include <glm/glm.hpp>
 #include "io.h"
 
 // Molecule-level Gillespie kinetic Monte Carlo for fibrillation kinetics
@@ -58,5 +59,29 @@ KmcProfile kmcProfile1D(const Basis2D& b, const std::vector<float>& parRG,
 KmcProfile kmcProfileFunnel(const Profiles& p1, float epsEl, float epsHy,
                             float D, float L);
 
+// A recorded still of the KMC state: which fibrils exist and, for every
+// molecule in them, the stagger bin it attached at. That is enough to place
+// every molecule in space, because a fibril of known staggers on the
+// Hodge-Petruska lattice is a fully determined 3D structure -- so hours of
+// assembly can be WATCHED at full-atom detail without integrating them.
+// Rigorous here: when each molecule attaches and what registry it takes.
+// Cosmetic: the path it travels between events.
+struct KmcFrame {
+    float tMin = 0;
+    float freeFrac = 1;
+    float massFrac = 0;
+    std::vector<std::vector<int>> fibStag;   // [fibril][molecule] = stagger bin
+};
+
 KmcResult kmcRun(const KmcParams& p, const KmcProfile& prof, const KmcProfile& profRef,
-                 double concMgMl, double mwKda, double tempC, uint32_t seed);
+                 double concMgMl, double mwKda, double tempC, uint32_t seed,
+                 std::vector<KmcFrame>* frames = nullptr, int maxFrames = 240);
+
+// Lay a recorded frame out in space: molecules are packed onto the
+// quasi-hexagonal lattice (5D file period, neighbour files offset by
+// (i+2j mod 5)*D) at their own KMC-sampled stagger, free monomers scattered
+// through the box. Emits a straight-rod bead polyline per molecule, in the
+// same layout the renderer already consumes.
+void kmcFrameToBeads(const KmcFrame& f, const KmcProfile& prof, int nMolMax,
+                     int nBeads, float segLen, const float boxHalf[3],
+                     uint32_t seed, std::vector<glm::vec4>& out, int& nUsed);

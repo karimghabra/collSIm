@@ -82,8 +82,70 @@ double kmcWellDepth(const Basis2D& b, const std::vector<float>& parRG,
     return -best;
 }
 
+void kmcFrameToBeads(const KmcFrame& f, const KmcProfile& prof, int nMolMax,
+                     int nBeads, float segLen, const float boxHalf[3],
+                     uint32_t seed, std::vector<glm::vec4>& out, int& nUsed) {
+    out.assign(size_t(nMolMax) * nBeads, glm::vec4(0));
+    // Molecules are laid onto a quasi-hexagonal microfibril lattice in the
+    // order they attached, each at ITS OWN KMC-sampled stagger. The lattice
+    // and the attachment order are a reconstruction; the staggers -- the part
+    // that produces D-banding -- are the rigorous output of the kinetics.
+    const int nFiles = 7;
+    const float fileR = 3.8f;          // lateral spacing of files (nm)
+    float rodLen = prof.L;
+    uint32_t rs = seed * 2654435761u + 1u;
+    auto rnd = [&] {
+        rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5;
+        return (rs >> 8) * (1.0f / 16777216.0f);
+    };
+    int izc = (int)prof.E.size() ? ((int)prof.E.size() - 1) / 2 : 0;
+    auto stagNm = [&](int iz) { return (iz - izc) * prof.dstep; };
+
+    int m = 0;
+    for (size_t fi = 0; fi < f.fibStag.size() && m < nMolMax; ++fi) {
+        // each fibril gets its own axis and origin in the box
+        float ax = (rnd() * 2 - 1), ay = (rnd() * 2 - 1), az = 1.0f + rnd();
+        glm::vec3 axis = glm::normalize(glm::vec3(ax * 0.35f, ay * 0.35f, az));
+        glm::vec3 up = fabsf(axis.z) < 0.9f ? glm::vec3(0, 0, 1) : glm::vec3(1, 0, 0);
+        glm::vec3 e1 = glm::normalize(glm::cross(axis, up));
+        glm::vec3 e2 = glm::cross(axis, e1);
+        glm::vec3 org((rnd() * 2 - 1) * boxHalf[0] * 0.55f,
+                      (rnd() * 2 - 1) * boxHalf[1] * 0.55f,
+                      (rnd() * 2 - 1) * boxHalf[2] * 0.35f);
+        float zRun[nFiles] = {0};
+        const auto& stg = f.fibStag[fi];
+        for (size_t k = 0; k < stg.size() && m < nMolMax; ++k, ++m) {
+            int file = int(k % nFiles);
+            float ang = 6.2831853f * file / nFiles;
+            glm::vec3 lat = (e1 * cosf(ang) + e2 * sinf(ang)) * fileR;
+            // Hodge-Petruska: neighbouring files sit one D-period apart
+            float z0 = zRun[file] + ((file * 3) % 5) * prof.D;
+            zRun[file] += std::max(8.f, fabsf(stagNm(stg[k])));
+            glm::vec3 base = org + lat + axis * z0;
+            for (int b = 0; b < nBeads; ++b)
+                out[size_t(m) * nBeads + b] =
+                    glm::vec4(base + axis * (b * segLen), 0.f);
+        }
+    }
+    // remaining slots are free monomers, scattered and randomly oriented
+    for (; m < nMolMax; ++m) {
+        glm::vec3 d;
+        do {
+            d = glm::vec3(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1);
+        } while (glm::dot(d, d) > 1.f || glm::dot(d, d) < 1e-4f);
+        d = glm::normalize(d);
+        glm::vec3 c((rnd() * 2 - 1) * boxHalf[0], (rnd() * 2 - 1) * boxHalf[1],
+                    (rnd() * 2 - 1) * boxHalf[2]);
+        glm::vec3 base = c - d * (rodLen * 0.5f);
+        for (int b = 0; b < nBeads; ++b)
+            out[size_t(m) * nBeads + b] = glm::vec4(base + d * (b * segLen), 0.f);
+    }
+    nUsed = m;
+}
+
 KmcResult kmcRun(const KmcParams& p, const KmcProfile& prof, const KmcProfile& profRef,
-                 double concMgMl, double mwKda, double tempC, uint32_t seed) {
+                 double concMgMl, double mwKda, double tempC, uint32_t seed,
+                 std::vector<KmcFrame>* frames, int maxFrames) {
     KmcResult r;
     double kT = (273.15 + tempC) / 310.15;
     int nBins = (int)prof.E.size();
@@ -157,6 +219,7 @@ KmcResult kmcRun(const KmcParams& p, const KmcProfile& prof, const KmcProfile& p
 
     double t = 0, tMax = p.tMaxMin * 60.0;
     double record = tMax / 900.0, nextRec = 0;
+    double frameEvery = tMax / std::max(1, maxFrames), nextFrame = 0;
     double koffSum = 0;   // sum of top-of-stack koff over fibrils
 
     auto pushMol = [&](Fib& f, int iz) {
@@ -205,6 +268,16 @@ KmcResult kmcRun(const KmcParams& p, const KmcProfile& prof, const KmcProfile& p
         if (R < 1e-12) { t = tMax; break; }
         t += -log(std::max(u01(), 1e-300)) / R;
         while (t >= nextRec && nextRec <= tMax) { recordPt(); nextRec += record; }
+        if (frames && t >= nextFrame && nextFrame <= tMax) {
+            KmcFrame kf;
+            kf.tMin = float(t / 60.0);
+            kf.freeFrac = float(double(nFree) / nTotal);
+            kf.massFrac = float(double(fibMass) / nTotal);
+            kf.fibStag.reserve(fib.size());
+            for (const auto& f : fib) kf.fibStag.push_back(f.stag);
+            frames->push_back(std::move(kf));
+            while (t >= nextFrame) nextFrame += frameEvery;
+        }
         double x = u01() * R;
         if (x < Rnuc) {
             fib.emplace_back();
