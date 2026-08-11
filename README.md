@@ -227,26 +227,50 @@ the recycling pool would manufacture flux out of nothing by re-crossing the
 target the instant any walker landed on it. Both the pool and the brute-force
 reference now reject such starts and say how many they threw away.
 
-**Validation status: not passing yet.** In the cleanest regime tested — 6
-molecules at 0.49 mg/mL, target trimer, τ = 60 ns against a mean first passage
-of 8156 ns, so 136 τ and well clear of the resolution floor — brute-force BD
-measured k = 1.23e-4 /ns ± 13% (61 events) and WE measured 6.0e-5 /ns ± 26%
-(15 steady-state crossings). That is **WE/brute = 0.49×, and the error bars do
-not overlap**: a real systematic bias, not noise. The direction is consistent
-with every known limitation below, all of which under-count flux, so the WE
-rate should currently be read as a **lower bound within about a factor of two**
-rather than as a calibrated estimate. Until this is root-caused, WE rates are
-not wired into the KMC tab — feeding a 2×-low nucleation rate into an
-hours-scale kinetic model would quietly corrupt it.
+### Validation status: WE reads ~2× low, cause still unknown
 
-Known limitations, so the rates are read with the right caveats: recycling
-draws from a small fixed pool of dispersed starts rather than a sampled basin
-distribution, so the reactant state is not fully decorrelated; τ sets a
-resolution floor (events faster than one per τ are reported as 1/τ, and the
-test warns when the measured MFPT is within 5τ); and walkers that cross into
-the product state and return within a single τ are not counted. All three push
-the estimate the same way — toward under-counting flux — so a WE rate here is
-better trusted as a lower bound than as a two-sided estimate.
+Measured on 6 molecules at 0.49 mg/mL, target trimer, against a brute-force BD
+mean first passage of ~8200 ns (genuinely rare — well over a hundred τ, so not
+a resolution-floor artifact):
+
+| τ | WE iterations | crossings | WE / brute force |
+|---|---|---|---|
+| 60 ns | 320 | 15 | 0.49× |
+| 30 ns | 500 | 14 | 1.27× |
+| 30 ns | 900 | 26 | 0.48× |
+
+τ was the obvious suspect — flux is only harvested at iteration boundaries, so
+a walker that crosses and falls back inside one τ is never counted — and the
+middle row looked like confirmation. **The high-statistics row refutes it.**
+Halving τ does not move the answer: WE sits at ~0.48× at both τ values once
+enough crossings accumulate. The middle row was a fluctuation, not a trend.
+
+That fluctuation is itself the second finding. Two runs at identical τ with the
+same recycling pool differ by 2.6×, far outside the ±27% that counting
+crossings and taking 1/√N suggests. **Poisson-on-crossing-counts is the wrong
+error bar for WE**: crossings carry unequal weights, and a single heavy walker
+dominates the flux sum, so the true variance is much larger than the count
+implies. The error bars `--wetest` currently prints are optimistic and need
+replacing with block averaging over iterations.
+
+Remaining suspects for the ~2× deficit, in order: the recycling pool is 6 fixed
+states rather than a sampled basin distribution (and the pre-nucleation filter
+removes precisely the fastest-nucleating starts, which biases the reactant
+ensemble slow); and merge lossiness at the low walker counts these runs settle
+into (12–20 walkers across 8 bins).
+
+Brute force reproduces itself across independent batches (1.23e-4, 1.20e-4,
+1.21e-4 /ns), so the reference is solid and the discrepancy is on the WE side.
+Until this is resolved, WE rates are a lower bound and are **not** wired into
+the KMC tab.
+
+Remaining limitations: recycling draws from a small fixed pool of dispersed
+starts rather than a sampled basin distribution, so the reactant state is not
+fully decorrelated; and τ still sets a hard resolution floor (events faster
+than one per τ are reported as 1/τ, and `--wetest` warns when the measured MFPT
+falls within 5τ). Both push the estimate the same way — toward under-counting
+flux — so with τ chosen too large a WE rate here is a lower bound, not a
+two-sided estimate.
 
 ## Three engines, three timescales
 

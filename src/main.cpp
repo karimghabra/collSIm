@@ -656,7 +656,12 @@ int main(int argc, char** argv) {
                                "the one engine here whose clock is trustworthy.");
             ImGui::Separator();
             ImGui::SliderInt("target cluster", &g_weUi.targetSize, 2, 12);
-            ImGui::SliderInt("tau (BD steps)", &g_weUi.tauSteps, 100, 5000);
+            ImGui::SliderInt("tau (BD steps)", &g_weUi.tauSteps, 50, 5000);
+            ImGui::TextDisabled("  = %.0f ns. Flux is only counted at iteration "
+                                "boundaries, so a crossing that reverts within\n"
+                                "  one tau is missed. Measured: halving tau did NOT "
+                                "close the ~2x deficit vs brute force.",
+                                g_weUi.tauSteps * sim.p.dt * sim.p.speed);
             ImGui::SliderInt("walkers per bin", &g_weUi.walkersPerBin, 2, 12);
             ImGui::SliderFloat("approach range (nm)", &g_weUi.approachNm, 5.f, 60.f);
             if (ImGui::Button(g_weActive ? "restart WE" : "start WE")) {
@@ -685,7 +690,10 @@ int main(int argc, char** argv) {
                     else if (v > 1e3) { v /= 1e3; u = "us"; }
                     ImGui::Text("rate %.4g /ns  ->  mean first passage %.2f %s", kss, v, u);
                     if (g_we.recyclesSS > 0)
-                        ImGui::TextDisabled("  +/- %.0f%% (Poisson, %d crossings)",
+                        ImGui::TextDisabled("  +/- %.0f%% nominal (Poisson on %d "
+                                            "crossings -- OPTIMISTIC: crossings carry\n"
+                                            "  unequal weights, and observed run-to-run "
+                                            "scatter is far wider than this)",
                                             100.0 / sqrt((double)g_we.recyclesSS),
                                             g_we.recyclesSS);
                     if (g_we.iters <= g_we.burnInIters)
