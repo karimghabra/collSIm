@@ -1,4 +1,4 @@
-// collagenSim — real-time GPU Brownian dynamics of type I collagen fibril
+﻿// collagenSim â€” real-time GPU Brownian dynamics of type I collagen fibril
 // self-assembly with full-atom rendering of every tropocollagen.
 #include <glad/gl.h>
 
@@ -23,6 +23,7 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #include "io.h"
 #include "kmc.h"
 #include "mcdock.h"
+#include "we.h"
 #include "render.h"
 #include "shader.h"
 #include "sim.h"
@@ -38,6 +39,14 @@ static McDock g_mcd;
 static int g_mcdTestN = 300;
 static int g_mcdTestSweeps = 2000;
 static bool g_mcdAnneal = false;
+// weighted-ensemble test knobs (pass BEFORE --wetest; the arg loop returns on it)
+static int g_weNmol = 40, g_weTarget = 3, g_weTau = 1500, g_weIters = 60;
+static int g_weBrute = 24, g_weBruteSteps = 30000, g_weWalkers = 4;
+static bool g_weTest = false;
+static WeRun g_we;
+static WeParams g_weUi;
+static bool g_weActive = false;
+static int g_weIdx = 0;
 static int g_mcdSweeps = 4;
 
 static void mouseButton(GLFWwindow* w, int b, int a, int) {
@@ -156,7 +165,7 @@ int main(int argc, char** argv) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     if (args.hidden) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-    GLFWwindow* win = glfwCreateWindow(1600, 1000, "collagenSim — type I collagen self-assembly", nullptr, nullptr);
+    GLFWwindow* win = glfwCreateWindow(1600, 1000, "collagenSim â€” type I collagen self-assembly", nullptr, nullptr);
     if (!win) { fprintf(stderr, "window creation failed\n"); return 1; }
     glfwMakeContextCurrent(win);
     if (!gladLoadGL(glfwGetProcAddress)) { fprintf(stderr, "gladLoadGL failed\n"); return 1; }
@@ -279,10 +288,25 @@ int main(int argc, char** argv) {
                        maxDev, sumR / nm / tmpl.lengthNm);
             }
             double nsw = nrep * 100.0;
-            printf("%.0f sweeps in %.1f s = %.0f sweeps/s -> %.2f sim-seconds per wall-hour\n",
+            printf("clock: %.2f us/sweep calibrated on %d free mols (MSD %.3f nm^2), "
+                   "uncorrected sigma^2/6D would say %.1f us%s\n",
+                   g_mcd.stepTimeNs * 1e-3, g_mcd.lastFreeCount, g_mcd.lastMsdFree,
+                   g_mcd.stepTimeNominalNs * 1e-3,
+                   g_mcd.clockExtrapolated ? " [EXTRAPOLATED]" : "");
+            printf("%.0f sweeps in %.1f s = %.0f sweeps/s -> %.3g sim-seconds per wall-hour\n",
                    nsw, el, nsw / el, nsw / el * g_mcd.stepTimeNs * 1e-9 * 3600.0);
             return 0;
         }
+        if (std::string(argv[i]) == "--wetest") g_weTest = true;
+        if (std::string(argv[i]) == "--wenmol" && i + 1 < argc) g_weNmol = atoi(argv[i + 1]);
+        if (std::string(argv[i]) == "--wetarget" && i + 1 < argc) g_weTarget = atoi(argv[i + 1]);
+        if (std::string(argv[i]) == "--wetau" && i + 1 < argc) g_weTau = atoi(argv[i + 1]);
+        if (std::string(argv[i]) == "--weiters" && i + 1 < argc) g_weIters = atoi(argv[i + 1]);
+        if (std::string(argv[i]) == "--webrute" && i + 1 < argc) g_weBrute = atoi(argv[i + 1]);
+        if (std::string(argv[i]) == "--webrutesteps" && i + 1 < argc)
+            g_weBruteSteps = atoi(argv[i + 1]);
+        if (std::string(argv[i]) == "--wewalkers" && i + 1 < argc)
+            g_weWalkers = atoi(argv[i + 1]);
         if (std::string(argv[i]) == "--kmctest") {
             KmcParams kp;
             const Corr2D* ctt = haveCorr ? &corrTab : nullptr;
@@ -344,6 +368,111 @@ int main(int argc, char** argv) {
     }
     sim.init(tmpl, prof, prof2, basis, haveAtelo ? &prof2A : nullptr,
              haveAtelo ? &basisA : nullptr, haveCorr ? &corrTab : nullptr);
+    if (g_weTest) {
+            WeParams wp;
+            wp.targetSize = g_weTarget;
+            wp.tauSteps = g_weTau;
+            wp.walkersPerBin = g_weWalkers;
+            sim.p.nMol = g_weNmol;
+            sim.p.boxHalf = {60.f, 60.f, 200.f};
+            sim.p.pbc = 1;
+            sim.p.scenario = 0;
+            sim.p.registryMode = 2;
+            sim.restart();
+            double volNm3 = 8.0 * 60.0 * 60.0 * 200.0;
+            // g per molecule -> g/mL over the box volume -> mg/mL
+            double mgml = g_weNmol * sim.mwKda * 1000.0 / 6.022e23 /
+                          (volNm3 * 1e-21) * 1000.0;
+            printf("WE system: %d molecules in 120x120x400 nm (%.2f mg/mL), "
+                   "target cluster %d, tau %d steps\n",
+                   g_weNmol, mgml, wp.targetSize, wp.tauSteps);
+
+            // --- brute force reference: events / total observation time ---
+            double bruteTimeNs = 0;
+            int bruteEvents = 0;
+            double t0 = glfwGetTime();
+            for (int r = 0; r < g_weBrute; ++r) {
+                sim.p.seed = 9000u + r;
+                sim.restart();
+                sim.step(1500);      // finish the soft-start ramp, then clear it
+                sim.burnin = 0;      // so WE walkers and this run see identical
+                sim.step(300);       // interaction strength from the clock's t=0
+                double t0ns = sim.simTimeNs;
+                SimState st;
+                sim.snapshot(st);
+                if (largestCluster(st.pos, sim.p.nMol, sim.p.nBeads, wp.contactNm,
+                                   true, sim.p.boxHalf) >= wp.targetSize) {
+                    printf("  run %d started already nucleated -- reactant state is "
+                           "not clean; lower the concentration\n", r);
+                    continue;
+                }
+                for (int s = 0; s < g_weBruteSteps; s += 500) {
+                    sim.step(500);
+                    sim.snapshot(st);
+                    int lam = largestCluster(st.pos, sim.p.nMol, sim.p.nBeads,
+                                             wp.contactNm, true, sim.p.boxHalf);
+                    if (lam >= wp.targetSize) { bruteEvents++; break; }
+                }
+                bruteTimeNs += sim.simTimeNs - t0ns;
+            }
+            double bruteRate = bruteTimeNs > 0 ? bruteEvents / bruteTimeNs : 0.0;
+            double bruteWall = glfwGetTime() - t0;
+            printf("brute force: %d events in %.1f ns observed (%d runs, %.0f s wall)"
+                   " -> k = %.4g /ns\n",
+                   bruteEvents, bruteTimeNs, g_weBrute, bruteWall, bruteRate);
+            if (bruteEvents > 0)
+                printf("             +/- %.4g (Poisson, 1/sqrt(N))\n",
+                       bruteRate / sqrt((double)bruteEvents));
+
+            // --- weighted ensemble on the same system ---
+            t0 = glfwGetTime();
+            WeRun we;
+            we.init(sim, wp, 4242u);
+            we.burnInIters = std::max(2, g_weIters / 4);
+            printf("WE init: %zu clean starts (%d rejected as pre-nucleated)\n",
+                   we.initPool.size(), we.poolRejects);
+            if (we.initPool.empty()) {
+                printf("ABORT: no clean reactant state at this concentration\n");
+                return 0;
+            }
+            for (int it = 0; it < g_weIters; ++it) {
+                we.iterate(sim);
+                if ((it + 1) % 5 == 0 || it == g_weIters - 1) {
+                    printf("  WE iter %3d | t %.1f ns | walkers %2zu | recycles %3d "
+                           "| k %.4g /ns | bins",
+                           it + 1, we.timeNs, we.walkers.size(), we.recycles,
+                           we.ratePerNs());
+                    for (int b = 0; b < (int)we.binPop.size(); ++b)
+                        printf(" %d:%.1e", b + 1, we.binWeight[b]);
+                    printf("\n");
+                    fflush(stdout);
+                }
+            }
+            double weWall = glfwGetTime() - t0;
+            printf("WE: k = %.4g /ns steady-state (%.4g including burn-in) from "
+                   "%.1f ns post-burn-in x %zu walkers, %d/%d recycles, %.0f s wall\n",
+                   we.rateSSPerNs(), we.ratePerNs(), we.timeNsSS, we.walkers.size(),
+                   we.recyclesSS, we.recycles, weWall);
+            if (we.recyclesSS > 0)
+                printf("    +/- %.4g (Poisson on %d steady-state crossings)\n",
+                       we.rateSSPerNs() / sqrt((double)we.recyclesSS), we.recyclesSS);
+            // WE can only resolve events rarer than one per tau: a walker is
+            // harvested at most once per iteration, so the estimator saturates
+            // at 1/tau and any faster true rate is reported as 1/tau.
+            double mfptBrute = bruteRate > 0 ? 1.0 / bruteRate : 0.0;
+            if (mfptBrute > 0 && mfptBrute < 5.0 * we.tauNs)
+                printf("WARNING: true MFPT %.0f ns is only %.1f tau -- WE saturates "
+                       "at 1/tau = %.4g /ns here. Lower the concentration or raise "
+                       "the target to test it properly.\n",
+                       mfptBrute, mfptBrute / we.tauNs, 1.0 / we.tauNs);
+            if (bruteRate > 0 && we.rateSSPerNs() > 0)
+                printf("VERDICT: WE/brute = %.2fx  (agreement within ~2x is the bar "
+                       "for a rare-event estimator)\n",
+                       we.rateSSPerNs() / bruteRate);
+            else
+                printf("VERDICT: inconclusive (one estimator saw no events)\n");
+            return 0;
+    }
 
     Renderer ren;
     ren.init(tmpl);
@@ -429,6 +558,13 @@ int main(int argc, char** argv) {
         glfwPollEvents();
 
         if (running && g_appMode == 0) sim.step(stepsPerFrame);
+        if (running && g_appMode == 3 && g_weActive && !g_we.walkers.empty()) {
+            g_we.advanceWalker(sim, g_weIdx);
+            if (++g_weIdx >= (int)g_we.walkers.size()) {
+                g_we.finishIteration(sim);
+                g_weIdx = 0;
+            }
+        }
         if (running && g_appMode == 1 && g_mcd.mols.size() == (size_t)sim.p.nMol) {
             g_mcd.sweep(g_mcdSweeps);
             static std::vector<glm::vec4> beadTmp;
@@ -507,7 +643,72 @@ int main(int argc, char** argv) {
             if (ImGui::BeginTabItem("BD (Langevin)")) { appMode = 0; ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("MC (docking)")) { appMode = 1; ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("KMC (kinetics)")) { appMode = 2; ImGui::EndTabItem(); }
+            if (ImGui::BeginTabItem("WE (rare events)")) { appMode = 3; ImGui::EndTabItem(); }
             ImGui::EndTabBar();
+        }
+        if (appMode == 3) {
+            ImGui::TextWrapped("Weighted ensemble over the BD engine. Every walker is "
+                               "plain unadjusted Brownian dynamics -- WE only moves "
+                               "computational effort, splitting walkers that climb the "
+                               "coordinate and merging ones that fall back, carrying "
+                               "weights that keep the ensemble exact. Rates come out "
+                               "unbiased, so this reaches rare events without giving up "
+                               "the one engine here whose clock is trustworthy.");
+            ImGui::Separator();
+            ImGui::SliderInt("target cluster", &g_weUi.targetSize, 2, 12);
+            ImGui::SliderInt("tau (BD steps)", &g_weUi.tauSteps, 100, 5000);
+            ImGui::SliderInt("walkers per bin", &g_weUi.walkersPerBin, 2, 12);
+            ImGui::SliderFloat("approach range (nm)", &g_weUi.approachNm, 5.f, 60.f);
+            if (ImGui::Button(g_weActive ? "restart WE" : "start WE")) {
+                g_we.init(sim, g_weUi, (uint32_t)glfwGetTime() * 977u + 13u);
+                g_we.burnInIters = 10;
+                g_weActive = true;
+                g_weIdx = 0;
+                running = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(running ? "pause##we" : "run##we")) running = !running;
+            if (g_weActive) {
+                ImGui::Separator();
+                ImGui::Text("iteration %d | walkers %zu | walker %d advancing",
+                            g_we.iters, g_we.walkers.size(), g_weIdx);
+                ImGui::Text("ensemble time %.1f ns | crossings %d (%d steady-state)",
+                            g_we.timeNs, g_we.recycles, g_we.recyclesSS);
+                double kss = g_we.rateSSPerNs();
+                if (kss > 0) {
+                    double mfptNs = 1.0 / kss;
+                    const char* u = "ns";
+                    double v = mfptNs;
+                    if (v > 6e10) { v /= 6e10; u = "min"; }
+                    else if (v > 1e9) { v /= 1e9; u = "s"; }
+                    else if (v > 1e6) { v /= 1e6; u = "ms"; }
+                    else if (v > 1e3) { v /= 1e3; u = "us"; }
+                    ImGui::Text("rate %.4g /ns  ->  mean first passage %.2f %s", kss, v, u);
+                    if (g_we.recyclesSS > 0)
+                        ImGui::TextDisabled("  +/- %.0f%% (Poisson, %d crossings)",
+                                            100.0 / sqrt((double)g_we.recyclesSS),
+                                            g_we.recyclesSS);
+                    if (g_we.iters <= g_we.burnInIters)
+                        ImGui::TextDisabled("  still in burn-in; rate not yet meaningful");
+                } else {
+                    ImGui::TextDisabled("no crossings yet");
+                }
+                ImGui::Text("weight by coordinate (target cluster %d):",
+                            g_weUi.targetSize);
+                for (int b = 0; b < (int)g_we.binWeight.size(); ++b) {
+                    if (g_we.binPop[b] == 0) continue;
+                    float lam = 1.f + float(b) / std::max(1, g_weUi.subBins);
+                    ImGui::Text("  lambda %.2f : w %.2e  (%d walkers)", lam,
+                                g_we.binWeight[b], g_we.binPop[b]);
+                }
+            }
+            ImGui::End();
+            ImGui::Render();
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+            glfwSwapBuffers(win);
+            glFinish();
+            frameIdx++;
+            continue;
         }
         if (appMode == 1) {
             // docking-based Monte Carlo (Vakser et al., PNAS 2022 adapted to rods)
@@ -558,8 +759,15 @@ int main(int argc, char** argv) {
             else if (tv > 1e6) { tv /= 1e6; unit = "ms"; }
             else if (tv > 1e3) { tv /= 1e3; unit = "us"; }
             ImGui::Separator();
-            ImGui::Text("sim time: %.2f %s | step %.1f us | %lld sweeps",
+            ImGui::Text("sim time: %.2f %s | step %.2f us | %lld sweeps",
                         tv, unit, g_mcd.stepTimeNs * 1e-3, (long long)g_mcd.sweepsDone);
+            if (g_mcd.clockExtrapolated)
+                ImGui::TextDisabled("  clock EXTRAPOLATED (no free molecules left)");
+            else
+                ImGui::TextDisabled("  calibrated on %d free mols, MSD %.3f nm^2/sweep"
+                                    " (uncorrected would be %.1f us)",
+                                    g_mcd.lastFreeCount, g_mcd.lastMsdFree,
+                                    g_mcd.stepTimeNominalNs * 1e-3);
             ImGui::Text("acceptance %.1f%% | poses %zu",
                         g_mcd.proposed ? 100.0 * g_mcd.accepted / g_mcd.proposed : 0.0,
                         g_mcd.poses.size());

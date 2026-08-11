@@ -185,6 +185,69 @@ self-crush; timestep displacement must be clamped below the excluded-volume
 shell or filaments tunnel; and a segment cell grid must use cell ≥ segment
 length + cutoff or contacts silently vanish.
 
+## Reaching rare events without giving up real kinetics (v0.4.0)
+
+The honest limit of everything below is that BD has the only trustworthy clock
+and reaches microseconds, while fibrillation takes 30–120 minutes. The usual
+temptations — bigger MC steps, force-biased proposals, softer potentials — all
+buy reach by damaging the dynamics, and a gradient-following proposal cannot
+cross a barrier to a *different* registry well anyway.
+
+The **WE tab** takes the other route. Weighted ensemble runs many walkers of
+plain, unadjusted Brownian dynamics — the propagator is not modified in any
+way — and redistributes only *computational effort*: walkers that climb a
+progress coordinate are split, ones that fall back are merged, and each carries
+a weight that keeps the ensemble statistically exact. It is variance reduction,
+not acceleration, so the rates that come out are unbiased estimates of the true
+BD rates. That is the entire reason to prefer it over a faster sampler.
+
+- **Progress coordinate**: size of the largest connected cluster, *plus* how
+  near the closest outside molecule has come to it. The continuous part matters
+  — with integer cluster size alone every walker sits in the same bin, nothing
+  distinguishes one about to gain a partner from one in empty solvent, and the
+  estimator saturates at one event per τ.
+- **Rate**: walkers reaching the target cluster have their weight harvested as
+  flux and are recycled to a fresh dispersed state, so the steady-state flux is
+  the nucleation rate directly (Hill relation). The first iterations are
+  discarded as burn-in — flux before weight has spread up the coordinate is
+  meaningless.
+- **Validation**: `--wetest` measures the same rate twice on the same system,
+  once by WE and once by brute-force BD, and prints the ratio. A rare-event
+  estimator that has not been checked against brute force in a regime where
+  brute force still works is not evidence of anything.
+
+Both engines must be equalized carefully to compare: `restart()` applies a
+1500-step soft-start ramp and `restore()` clears it, so a reference run left
+mid-ramp is handicapped precisely where the events occur. Both now complete the
+ramp before the clock starts.
+
+The reactant basin also has to be *clean*: at 1 mg/mL roughly one equilibrated
+start in eight already contains a trimer, and a single pre-nucleated state in
+the recycling pool would manufacture flux out of nothing by re-crossing the
+target the instant any walker landed on it. Both the pool and the brute-force
+reference now reject such starts and say how many they threw away.
+
+**Validation status: not passing yet.** In the cleanest regime tested — 6
+molecules at 0.49 mg/mL, target trimer, τ = 60 ns against a mean first passage
+of 8156 ns, so 136 τ and well clear of the resolution floor — brute-force BD
+measured k = 1.23e-4 /ns ± 13% (61 events) and WE measured 6.0e-5 /ns ± 26%
+(15 steady-state crossings). That is **WE/brute = 0.49×, and the error bars do
+not overlap**: a real systematic bias, not noise. The direction is consistent
+with every known limitation below, all of which under-count flux, so the WE
+rate should currently be read as a **lower bound within about a factor of two**
+rather than as a calibrated estimate. Until this is root-caused, WE rates are
+not wired into the KMC tab — feeding a 2×-low nucleation rate into an
+hours-scale kinetic model would quietly corrupt it.
+
+Known limitations, so the rates are read with the right caveats: recycling
+draws from a small fixed pool of dispersed starts rather than a sampled basin
+distribution, so the reactant state is not fully decorrelated; τ sets a
+resolution floor (events faster than one per τ are reported as 1/τ, and the
+test warns when the measured MFPT is within 5τ); and walkers that cross into
+the product state and return within a single τ are not counted. All three push
+the estimate the same way — toward under-counting flux — so a WE rate here is
+better trusted as a lower bound than as a two-sided estimate.
+
 ## Three engines, three timescales
 
 The same measured interaction tables drive three independent simulation

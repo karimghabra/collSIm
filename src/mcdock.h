@@ -63,7 +63,18 @@ public:
     float persistLen = 60.f;
     bool pbc = true;
     double simTimeNs = 0;
+    // Clock: sigma^2/6D credits a full free-diffusion hop every sweep, but
+    // most proposals are rejected, so it overstates elapsed time by ~1/acc.
+    // stepTimeNs is calibrated instead on the MEASURED mean-square COM
+    // displacement of molecules that were free at the start of the sweep --
+    // free molecules keep diffusing at the physical rate no matter what the
+    // sampler accepts, so they are the honest clock. With none left (fully
+    // assembled) the last calibration is held and flagged as extrapolated.
     double stepTimeNs = 0;
+    double stepTimeNominalNs = 0;   // sigma^2/6D, for comparison
+    double lastMsdFree = 0;         // nm^2 per sweep
+    int lastFreeCount = 0;
+    bool clockExtrapolated = false;
     int64_t sweepsDone = 0, proposed = 0, accepted = 0;
     int64_t accWhole = 0, accDock = 0, accPivot = 0, accSlide = 0;
 

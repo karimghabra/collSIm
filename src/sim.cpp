@@ -469,6 +469,32 @@ void Sim::buildGrid() {
     barrier();
 }
 
+void Sim::snapshot(SimState& s) {
+    s.pos.resize(nBead());
+    glGetNamedBufferSubData(posBuf, 0, sizeof(vec4) * nBead(), s.pos.data());
+    s.theta.resize(p.nMol);
+    if (thetaBuf) glGetNamedBufferSubData(thetaBuf, 0, 4 * p.nMol, s.theta.data());
+    s.attMag.resize(nSeg());
+    if (attMagBuf) glGetNamedBufferSubData(attMagBuf, 0, 4 * nSeg(), s.attMag.data());
+    s.simTimeNs = simTimeNs;
+    s.totalSteps = totalSteps;
+    s.seed = p.seed;
+}
+
+void Sim::restore(const SimState& s, bool reseed, uint32_t newSeed) {
+    glNamedBufferSubData(posBuf, 0, sizeof(vec4) * nBead(), s.pos.data());
+    if (thetaBuf && !s.theta.empty())
+        glNamedBufferSubData(thetaBuf, 0, 4 * p.nMol, s.theta.data());
+    if (attMagBuf && !s.attMag.empty())
+        glNamedBufferSubData(attMagBuf, 0, 4 * nSeg(), s.attMag.data());
+    simTimeNs = s.simTimeNs;
+    totalSteps = s.totalSteps;
+    p.seed = reseed ? newSeed : s.seed;
+    burnin = 0;                 // a resumed walker is already equilibrated
+    // the neighbour list in GPU memory belongs to whichever walker ran last
+    buildGrid();
+}
+
 void Sim::step(int nSteps) {
     float tK = 273.15f + p.tempC;
     float kTeff = p.kT * tK / 310.15f;

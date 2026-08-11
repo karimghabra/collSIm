@@ -62,8 +62,25 @@ struct SimParams {
     uint32_t seed = 1234;
 };
 
+// Full dynamical state of one system: everything a walker needs to be paused,
+// cloned and resumed as if it had never stopped. attMag is the lagged
+// attraction-saturation state, carried so a restore is bit-faithful rather
+// than merely close.
+struct SimState {
+    std::vector<glm::vec4> pos;
+    std::vector<float> theta;
+    std::vector<float> attMag;
+    double simTimeNs = 0;
+    int64_t totalSteps = 0;
+    uint32_t seed = 0;
+};
+
 class Sim {
 public:
+    void snapshot(SimState& s);
+    // reseed: give a cloned walker its own noise stream so replicas that split
+    // from a common parent decorrelate instead of retracing the same path
+    void restore(const SimState& s, bool reseed = false, uint32_t newSeed = 0);
     void init(const AtomTemplate& tmpl, const Profiles& prof, const Profiles2D& prof2,
               const Basis2D& basis, const Profiles2D* prof2Atelo = nullptr,
               const Basis2D* basisAtelo = nullptr, const Corr2D* corr = nullptr);

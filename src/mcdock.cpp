@@ -212,7 +212,8 @@ void McDock::computeStepTime() {
     // more ground per sweep than this credits, so dilute-phase sim time is a
     // lower bound (we under-report, never over-report).
     double Dt = 0.007;   // nm^2/ns
-    stepTimeNs = double(p.sigmaFree) * p.sigmaFree / (6.0 * Dt);
+    stepTimeNominalNs = double(p.sigmaFree) * p.sigmaFree / (6.0 * Dt);
+    if (stepTimeNs <= 0) stepTimeNs = stepTimeNominalNs;   // until calibrated
 }
 
 // closest-approach between two link segments; B shifted per-pair to its
@@ -408,7 +409,23 @@ void McDock::sweep(int nSweeps) {
 
     rebuildGrid();
     std::vector<std::pair<int, int>> cand;
+    std::vector<vec3> com0(N);
+    std::vector<char> wasFree(N);
+    auto comOf = [&](int m) {
+        vec3 c(0);
+        for (int i = 0; i < nL; ++i) c += linkC[size_t(m) * nL + i];
+        return c / float(nL);
+    };
     for (int sw = 0; sw < nSweeps; ++sw) {
+        // Clock reference: molecules not in CONTACT (having a neighbour merely
+        // within capture range does not arrest diffusion, so bound-ness, not
+        // proximity, is the right test).
+        for (int m = 0; m < N; ++m) wasFree[m] = 1;
+        forEachContact(p.contactR + 1.f,
+                       [&](int m, int, int j, int, float) { wasFree[m] = wasFree[j] = 0; });
+        int nFree = 0;
+        for (int m = 0; m < N; ++m) nFree += wasFree[m];
+        double msdSweep = 0;
         for (int im = 0; im < N; ++im) {
             proposed++;
             Mol& M = mols[im];
@@ -419,6 +436,7 @@ void McDock::sweep(int nSweeps) {
             if (nL == 1 && r >= 0.65) r -= 0.35;    // no joints to pivot
             if (!p.dockMoves && r >= 0.25 && r < 0.45) r += 0.20;
             Mol T = M;
+            vec3 transDv(0);
             int kind;   // 0 transport, 1 dock, 2 pivot, 3 axial slide
             float hastings = 1.f;
 
@@ -442,6 +460,7 @@ void McDock::sweep(int nSweeps) {
                 com /= float(nL);
                 T.p0 = com + dq * (M.p0 - com) + dv;
                 for (int i = 0; i < nL; ++i) T.q[i] = dq * M.q[i];
+                transDv = dv;
                 // reverse-hop width from the proposed state
                 bool free1 = true;
                 for (int i = 0; i < nL && free1; ++i) {
@@ -528,6 +547,7 @@ void McDock::sweep(int nSweeps) {
                 else if (kind == 1) accDock++;
                 else if (kind == 3) accSlide++;
                 else accPivot++;
+                if (kind == 0 && wasFree[im]) msdSweep += glm::dot(transDv, transDv);
                 M = T;
                 if (pbc) {
                     vec3 com(0);
@@ -539,6 +559,17 @@ void McDock::sweep(int nSweeps) {
                 cacheMol(im);
                 rebuildGrid();
             }
+        }
+        // Calibrate on the DIFFUSIVE channel only: accepted transport hops of
+        // free molecules. Axial D-jumps and dock hops also displace molecules,
+        // often much further, but they are smart moves -- crediting them as
+        // diffusion would inflate the clock badly (measured: 18x). They buy
+        // sampling, not time, so structures here run ahead of the clock.
+        lastFreeCount = nFree;
+        clockExtrapolated = (nFree == 0);
+        if (nFree > 0) {
+            lastMsdFree = msdSweep / nFree;
+            if (lastMsdFree > 0) stepTimeNs = lastMsdFree / (6.0 * 0.007);
         }
         sweepsDone++;
         simTimeNs += stepTimeNs;

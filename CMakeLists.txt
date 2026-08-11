@@ -41,6 +41,7 @@ add_executable(collagenSim
   src/sim.cpp
   src/kmc.cpp
   src/mcdock.cpp
+  src/we.cpp
   src/render.cpp)
 target_include_directories(collagenSim PRIVATE extern src)
 target_link_libraries(collagenSim PRIVATE glad glfw imgui_lib glm::glm opengl32)
