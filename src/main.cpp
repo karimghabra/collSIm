@@ -204,12 +204,23 @@ int main(int argc, char** argv) {
     } catch (...) {
         printf("no atelo tables (run tools/azimuthal_profile.py --atelo)\n");
     }
+    Corr2D corrTab;
+    bool haveCorr = false;
+    try {
+        corrTab = loadCorr2D(resolveAsset("assets/correction2d.bin"));
+        haveCorr = true;
+        printf("measured correction table loaded (%ux%ux%u)\n",
+               corrTab.nD, corrTab.nPhi, corrTab.nPhi);
+    } catch (...) {
+        printf("no measured corrections (run tools/pmf_merge.py)\n");
+    }
     printf("template: %u atoms, L=%.1f nm, D=%.2f nm | 2D registry %ux%ux%u\n",
            tmpl.natoms, tmpl.lengthNm, tmpl.dPeriodNm, prof2.nD, prof2.nPhi, prof2.nPhi);
 
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--mcdocktest") {
-            g_mcd.buildPoseLibrary(basis, prof2.par, 7.4f, 2.5f, 1.0f);
+            g_mcd.buildPoseLibrary(basis, prof2.par, 7.4f, 2.5f, 1.0f,
+                                   haveCorr ? &corrTab : nullptr);
             g_mcd.initFromScatter(300, {120, 120, 210}, tmpl.lengthNm, true, 1234);
             double t0 = glfwGetTime();
             for (int rep = 0; rep < 20; ++rep) {
@@ -229,8 +240,9 @@ int main(int argc, char** argv) {
         }
         if (std::string(argv[i]) == "--kmctest") {
             KmcParams kp;
-            KmcProfile prT = kmcProfile1D(basis, prof2.par, 7.4f, 2.5f, 1.0f);
-            KmcProfile prAcid = kmcProfile1D(basis, prof2.par, 3.5f, 2.5f, 1.0f);
+            const Corr2D* ctt = haveCorr ? &corrTab : nullptr;
+            KmcProfile prT = kmcProfile1D(basis, prof2.par, 7.4f, 2.5f, 1.0f, ctt);
+            KmcProfile prAcid = kmcProfile1D(basis, prof2.par, 3.5f, 2.5f, 1.0f, ctt);
             for (double c : {0.3, 1.0, 3.0}) {
                 KmcResult r = kmcRun(kp, prT, prT, c, 284.7, 37.0, 7);
                 printf("telo %.1f mg/mL 37C: lag %5.1f min, t50 %5.1f, plateau %3.0f%%, "
@@ -286,7 +298,7 @@ int main(int argc, char** argv) {
         if (args.fibLen > 0) sim.p.fibrilLenUm = args.fibLen;
     }
     sim.init(tmpl, prof, prof2, basis, haveAtelo ? &prof2A : nullptr,
-             haveAtelo ? &basisA : nullptr);
+             haveAtelo ? &basisA : nullptr, haveCorr ? &corrTab : nullptr);
 
     Renderer ren;
     ren.init(tmpl);
@@ -466,7 +478,9 @@ int main(int argc, char** argv) {
                     sim.p.atelo != lastAtelo || g_mcd.poses.empty()) {
                     const Basis2D& bAct = (sim.p.atelo && haveAtelo) ? basisA : basis;
                     const Profiles2D& pAct = (sim.p.atelo && haveAtelo) ? prof2A : prof2;
-                    g_mcd.buildPoseLibrary(bAct, pAct.par, sim.p.pH, sim.p.epsEl, sim.p.epsHy);
+                    g_mcd.buildPoseLibrary(bAct, pAct.par, sim.p.pH, sim.p.epsEl,
+                                           sim.p.epsHy, haveCorr ? &corrTab : nullptr,
+                                           sim.p.epsCorr);
                     lastPH = sim.p.pH; lastEl = sim.p.epsEl; lastHy = sim.p.epsHy;
                     lastAtelo = sim.p.atelo;
                 }
@@ -576,14 +590,17 @@ int main(int argc, char** argv) {
                 const Profiles2D& pAct = (sim.p.atelo && haveAtelo) ? prof2A : prof2;
                 float ehyT = sim.p.epsHy * std::max(0.05f, 1.f + 0.013f * (sim.p.tempC - 37.f));
                 KmcProfile kprof, kprofRef;
+                const Corr2D* ct = haveCorr ? &corrTab : nullptr;
                 if (sim.p.registryMode == 1) {
                     kprof = kmcProfileFunnel(prof, sim.p.epsEl, ehyT,
                                              tmpl.dPeriodNm, tmpl.lengthNm);
                     kprofRef = kmcProfileFunnel(prof, sim.p.epsEl, sim.p.epsHy,
                                                 tmpl.dPeriodNm, tmpl.lengthNm);
                 } else {
-                    kprof = kmcProfile1D(bAct, pAct.par, sim.p.pH, sim.p.epsEl, ehyT);
-                    kprofRef = kmcProfile1D(basis, prof2.par, 7.4f, sim.p.epsEl, sim.p.epsHy);
+                    kprof = kmcProfile1D(bAct, pAct.par, sim.p.pH, sim.p.epsEl,
+                                         ehyT, ct, sim.p.epsCorr);
+                    kprofRef = kmcProfile1D(basis, prof2.par, 7.4f, sim.p.epsEl,
+                                            sim.p.epsHy, ct, sim.p.epsCorr);
                 }
                 kmcR = kmcRun(kmcP, kprof, kprofRef, kmcConc, sim.mwKda, sim.p.tempC,
                               (uint32_t)kmcSeed);
@@ -725,6 +742,14 @@ int main(int argc, char** argv) {
             ImGui::SliderFloat("eps electrostatic", &sim.p.epsEl, 0.f, 20.f);
             ImGui::SliderFloat("eps hydrophobic", &sim.p.epsHy, 0.f, 20.f);
             ImGui::SliderFloat("eps nonspecific", &sim.p.epsNs, 0.f, 4.f);
+            if (sim.hasCorr) {
+                ImGui::SliderFloat("measured correction", &sim.p.epsCorr, 0.f, 2.f);
+                ImGui::SetItemTooltip("Delta-learned wells from the all-atom PMF\n"
+                                      "campaign (1x = as measured, shrunk+capped)");
+            } else {
+                ImGui::TextDisabled("no measured corrections loaded");
+            }
+            ImGui::SliderFloat("alignment gate exp", &sim.p.wExp, 0.5f, 2.f);
             ImGui::SliderFloat("eps depletion (crowding)", &sim.p.epsDep, 0.f, 4.f);
             ImGui::SliderFloat("depletion range (nm)", &sim.p.depR, 1.f, 8.f);
             ImGui::SliderFloat("antiparallel mix", &sim.p.apMix, 0.f, 1.f);

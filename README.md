@@ -134,6 +134,22 @@ buckling without end effects.
   is a µm-to-100 µm fascicle-scale phenomenon involving inter-fibrillar
   matrix; what this reaches is fibril-level twist/buckling mechanics.
 
+## Measured interactions (v0.2.0)
+
+The registry tables now carry a third channel: **Delta-learned corrections
+from all-atom implicit-solvent MD** (`tools/pmf_harness.py` campaign, 305
+baseline-corrected segment-pair mean-force measurements; merged by
+`tools/pmf_merge.py` with bootstrap shrinkage and a conservative +/-6 kT/seg
+cap). Measured well corrections at the three D-stagger families (-3.7, -6.0,
+-6.0 kT per engine segment at 67.6/132.3/203.4 nm), radial envelope refit
+from the gap scan (attR0 1.65 nm), and — per the tilt-series verdict — the
+cos^2 alignment factor demoted to polarity gating (the stagger ramp of each
+contact carries the physical angular attenuation). Result: KMC D-banding
+order from sequence-raw tables rose 0.02 -> 0.99 and docking-MC 0.69 -> 0.93,
+retiring the idealized funnel as the best-performing model. The `measured
+correction` slider scales the channel; raw fits and uncertainties are in
+`pmf_data/merge_report.txt`.
+
 ## Registry models (and what they taught us)
 
 The app ships three switchable registry models (UI: physics → registry model):

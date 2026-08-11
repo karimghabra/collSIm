@@ -27,7 +27,7 @@ uniform vec3 cellSize;
 uniform vec3 gridDim;
 uniform int pbc;
 uniform float rRep, kRep, attR0, attW, cutoff;
-uniform float epsEl, epsHy, epsNs, apMix;
+uniform float epsEl, epsHy, epsNs, apMix, epsCorr, wExp;
 uniform float kWall, kT;
 uniform int registryMode;
 uniform float profDs;
@@ -85,16 +85,17 @@ vec2 sampPar(float delta) {
 vec2 sampAp(float rho) {
     return texture(apTex, (rho / profDs + 0.5) / float(nAp)).rg;
 }
-vec2 samp3Par(float delta, float pa, float pb) {
+vec3 samp3Par(float delta, float pa, float pb) {
     vec3 tc = vec3(pb / 6.2831853 + 0.5, pa / 6.2831853 + 0.5,
                    (delta / p2Dstep + float(p2nD - 1) * 0.5 + 0.5) / float(p2nD));
-    return texture(parTex2, tc).rg;
+    return texture(parTex2, tc).rgb;
 }
-vec2 samp3Ap(float rho, float pa, float pb) {
+vec3 samp3Ap(float rho, float pa, float pb) {
     vec3 tc = vec3(pb / 6.2831853 + 0.5, pa / 6.2831853 + 0.5,
                    ((rho + 2.0 * p2S0) / p2Dstep + 0.5) / float(p2nR));
-    return texture(apTex2, tc).rg;
+    return texture(apTex2, tc).rgb;
 }
+float gOf(vec3 u) { return epsEl * u.r + epsHy * u.g + epsCorr * u.b; }
 
 // energy of one segment of molecule m against all OTHER molecules, with m's
 // endpoints/frames optionally passed through the trial transform
@@ -148,8 +149,8 @@ float segEnergy(int m, int k, vec3 C, vec4 Q, vec3 T, int apply) {
                 float env = exp(-((d - attR0) * (d - attR0)) / (attW * attW));
                 vec3 tB = normalize(B1 - B0);
                 float ca = dot(tA, tB);
-                float wp = ca > 0.0 ? ca * ca : 0.0;
-                float wa = ca < 0.0 ? ca * ca * apMix : 0.0;
+                float wp = ca > 0.0 ? pow(ca, wExp) : 0.0;
+                float wa = ca < 0.0 ? pow(-ca, wExp) * apMix : 0.0;
                 float sB0 = float(kJ) * segLen;
                 float sgn = ca >= 0.0 ? 1.0 : -1.0;
                 vec3 tP = tA + sgn * tB;
@@ -171,8 +172,8 @@ float segEnergy(int m, int k, vec3 C, vec4 Q, vec3 T, int apply) {
                     vec3 nB = qrot(qB, vec3(1, 0, 0)), bB = qrot(qB, vec3(0, 1, 0));
                     float pa = atan(dot(nh, bA), dot(nh, nA));
                     float pb = atan(dot(-nh, bB), dot(-nh, nB));
-                    if (wp > 1e-3) { vec2 u0 = samp3Par(delta, pa, pb); G += wp * (epsEl * u0.r + epsHy * u0.g); }
-                    if (wa > 1e-3) { vec2 u0 = samp3Ap(rho, pa, pb); G += wa * (epsEl * u0.r + epsHy * u0.g); }
+                    if (wp > 1e-3) G += wp * gOf(samp3Par(delta, pa, pb));
+                    if (wa > 1e-3) G += wa * gOf(samp3Ap(rho, pa, pb));
                 }
                 E += env * G;
             }

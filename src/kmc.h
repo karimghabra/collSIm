@@ -45,11 +45,13 @@ struct KmcResult {
 // deepest combined registry well (kT/contact-pair, positive) near the
 // D-stagger, at the given pH and epsilon weights, from the basis tables
 double kmcWellDepth(const Basis2D& b, const std::vector<float>& parRG,
-                    float pH, float epsEl, float epsHy);
+                    float pH, float epsEl, float epsHy,
+                    const Corr2D* corr = nullptr, float epsCorr = 1.f);
 
 // angular-free-energy 1D registry landscape at the given environment
 KmcProfile kmcProfile1D(const Basis2D& b, const std::vector<float>& parRG,
-                        float pH, float epsEl, float epsHy);
+                        float pH, float epsEl, float epsHy,
+                        const Corr2D* corr = nullptr, float epsCorr = 1.f);
 
 // idealized funnel landscape (telopeptide dock-and-lock stand-in, registry
 // model 1) from the 1D profile tables

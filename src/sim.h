@@ -21,6 +21,9 @@ struct SimParams {
     float epsEl = 2.5f;           // electrostatic registry well depth (kT/pair)
     float epsHy = 1.0f;           // hydrophobic registry well depth (kT/pair)
     float epsNs = 0.15f;          // nonspecific contact attraction (kT)
+    float epsCorr = 1.0f;         // measured Delta-learning correction weight
+    float wExp = 1.0f;            // alignment gate exponent (tilt verdict:
+                                  // geometry attenuates; 1 = polarity gating)
     float tempC = 37.f;           // temperature; kT and hydrophobic strength follow
     float pH = 7.4f;              // protonation states via basis recombination
     float epsDep = 0.f;           // depletion/crowding attraction (kT)
@@ -40,8 +43,9 @@ struct SimParams {
     float xlinkCut = 2.6f;        // pairing cutoff at initialization (nm)
     float rRep = 1.6f;            // core repulsion onset (nm, center-center)
     float kRep = 15.f;            // kT/nm^2 (barrier ~19 kT, no crossings)
-    float attR0 = 1.5f;           // preferred contact distance
-    float attW = 0.9f;            // envelope width
+    float attR0 = 1.65f;          // preferred contact distance (PMF gap scan)
+    float attW = 0.75f;           // envelope width (fit 0.60; softened 25%
+                                  // pending replicate confirmation)
     float cutoff = 3.5f;          // interaction cutoff (auto-raised by depletion)
     float kWall = 4.f;
     float fMax = 15.f;            // force clamp kT/nm
@@ -62,8 +66,9 @@ class Sim {
 public:
     void init(const AtomTemplate& tmpl, const Profiles& prof, const Profiles2D& prof2,
               const Basis2D& basis, const Profiles2D* prof2Atelo = nullptr,
-              const Basis2D* basisAtelo = nullptr);
+              const Basis2D* basisAtelo = nullptr, const Corr2D* corr = nullptr);
     bool hasAtelo = false;
+    bool hasCorr = false;
     void recombinePH();           // rebuild electrostatic tables at p.pH
     float netCharge() const;      // per molecule, elementary charges, at p.pH
     float mwKda = 285.f;
@@ -95,6 +100,7 @@ public:
     GLuint hyParBuf = 0, hyApBuf = 0;
     GLuint basisParBuf2 = 0, basisApBuf2 = 0; // atelo variants
     GLuint hyParBuf2 = 0, hyApBuf2 = 0;
+    GLuint corrParBuf = 0, corrZeroBuf = 0;   // measured correction (par only)
     float tCounts2[8] = {0};
     GLuint renderPosBuf = 0, centersBuf = 0;  // display smoothing + LOD
     GLuint nbrListBuf = 0, nbrCntBuf = 0;     // Verlet neighbor lists

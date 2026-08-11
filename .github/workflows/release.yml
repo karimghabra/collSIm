@@ -26,6 +26,7 @@ jobs:
           python tools/interaction_profile.py
           python tools/azimuthal_profile.py
           python tools/azimuthal_profile.py --atelo
+          python tools/pmf_merge.py
 
       - name: Configure and build
         run: |

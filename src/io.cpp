@@ -81,6 +81,26 @@ Basis2D loadBasis2D(const std::string& path) {
     return b;
 }
 
+Corr2D loadCorr2D(const std::string& path) {
+    char magic[4];
+    FILE* f = openBin(path, magic);
+    if (memcmp(magic, "CORR", 4)) throw std::runtime_error("bad magic in " + path);
+    uint32_t hdr[4];
+    float fh[4];
+    fread(hdr, 4, 4, f);
+    fread(fh, 4, 4, f);
+    Corr2D c;
+    c.nD = hdr[1];
+    c.nPhi = hdr[2];
+    c.dstep = fh[0];
+    c.L = fh[1];
+    c.D = fh[2];
+    c.c.resize(size_t(c.nD) * c.nPhi * c.nPhi);
+    fread(c.c.data(), 4, c.c.size(), f);
+    fclose(f);
+    return c;
+}
+
 Profiles loadProfiles(const std::string& path) {
     char magic[4];
     FILE* f = openBin(path, magic);

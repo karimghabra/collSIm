@@ -26,7 +26,7 @@ uniform vec3 boxHalf;
 uniform float cell;
 uniform vec3 gridDim;
 uniform float rRep, kRep, attR0, attW, cutoff;
-uniform float epsEl, epsHy, epsNs, apMix, epsDep, depR;
+uniform float epsEl, epsHy, epsNs, apMix, epsDep, depR, epsCorr, wExp;
 uniform int specific;
 uniform float molLen, profDs;
 uniform int nPar, nAp;
@@ -37,16 +37,17 @@ uniform int p2nD, p2nR, p2nPhi;
 
 vec3 qrot(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
 
-vec2 samp3Par(float delta, float pa, float pb) {
+vec3 samp3Par(float delta, float pa, float pb) {
     vec3 tc = vec3(pb / 6.2831853 + 0.5, pa / 6.2831853 + 0.5,
                    (delta / p2Dstep + float(p2nD - 1) * 0.5 + 0.5) / float(p2nD));
-    return texture(parTex2, tc).rg;
+    return texture(parTex2, tc).rgb;
 }
-vec2 samp3Ap(float rho, float pa, float pb) {
+vec3 samp3Ap(float rho, float pa, float pb) {
     vec3 tc = vec3(pb / 6.2831853 + 0.5, pa / 6.2831853 + 0.5,
                    ((rho + 2.0 * p2S0) / p2Dstep + 0.5) / float(p2nR));
-    return texture(apTex2, tc).rg;
+    return texture(apTex2, tc).rgb;
 }
+float gOf(vec3 u) { return epsEl * u.r + epsHy * u.g + epsCorr * u.b; }
 
 vec3 mimg(vec3 d) {
     if (pbc == 0) return d;
@@ -133,8 +134,10 @@ void main() {
                 float denv = env * (-2.0 * (d - attR0) / (attW * attW));
                 vec3 tB = normalize(B1 - B0);
                 float ca = dot(tA, tB);
-                float wp = ca > 0.0 ? ca * ca : 0.0;
-                float wa = ca < 0.0 ? ca * ca * apMix : 0.0;
+                // wExp=1: polarity gating only — the stagger ramp carries the
+                // physical angular attenuation (tilt-series verdict)
+                float wp = ca > 0.0 ? pow(ca, wExp) : 0.0;
+                float wa = ca < 0.0 ? pow(-ca, wExp) * apMix : 0.0;
                 float sB0 = float(kJ) * segLen;
                 float G = -epsNs, dG = 0.0;
                 // symmetrized pair tangent: both members compute the same axis,
@@ -181,24 +184,24 @@ void main() {
                     float pb = atan(dot(-nh, bB), dot(-nh, nB));
                     float dphi = 6.2831853 / float(p2nPhi);
                     if (wp > 1e-3) {
-                        vec2 u0 = samp3Par(delta, pa, pb);
-                        vec2 uzp = samp3Par(delta + p2Dstep, pa, pb);
-                        vec2 uzm = samp3Par(delta - p2Dstep, pa, pb);
-                        vec2 uap = samp3Par(delta, pa + dphi, pb);
-                        vec2 uam = samp3Par(delta, pa - dphi, pb);
-                        G += wp * (epsEl * u0.r + epsHy * u0.g);
-                        dG += wp * (epsEl * (uzp.r - uzm.r) + epsHy * (uzp.g - uzm.g)) / (2.0 * p2Dstep);
-                        tqA += env * wp * (epsEl * (uap.r - uam.r) + epsHy * (uap.g - uam.g)) / (2.0 * dphi);
+                        float g0 = gOf(samp3Par(delta, pa, pb));
+                        float gzp = gOf(samp3Par(delta + p2Dstep, pa, pb));
+                        float gzm = gOf(samp3Par(delta - p2Dstep, pa, pb));
+                        float gap_ = gOf(samp3Par(delta, pa + dphi, pb));
+                        float gam = gOf(samp3Par(delta, pa - dphi, pb));
+                        G += wp * g0;
+                        dG += wp * (gzp - gzm) / (2.0 * p2Dstep);
+                        tqA += env * wp * (gap_ - gam) / (2.0 * dphi);
                     }
                     if (wa > 1e-3) {
-                        vec2 u0 = samp3Ap(rho, pa, pb);
-                        vec2 uzp = samp3Ap(rho + p2Dstep, pa, pb);
-                        vec2 uzm = samp3Ap(rho - p2Dstep, pa, pb);
-                        vec2 uap = samp3Ap(rho, pa + dphi, pb);
-                        vec2 uam = samp3Ap(rho, pa - dphi, pb);
-                        G += wa * (epsEl * u0.r + epsHy * u0.g);
-                        dG += wa * (epsEl * (uzp.r - uzm.r) + epsHy * (uzp.g - uzm.g)) / (2.0 * p2Dstep);
-                        tqA += env * wa * (epsEl * (uap.r - uam.r) + epsHy * (uap.g - uam.g)) / (2.0 * dphi);
+                        float g0 = gOf(samp3Ap(rho, pa, pb));
+                        float gzp = gOf(samp3Ap(rho + p2Dstep, pa, pb));
+                        float gzm = gOf(samp3Ap(rho - p2Dstep, pa, pb));
+                        float gap_ = gOf(samp3Ap(rho, pa + dphi, pb));
+                        float gam = gOf(samp3Ap(rho, pa - dphi, pb));
+                        G += wa * g0;
+                        dG += wa * (gzp - gzm) / (2.0 * p2Dstep);
+                        tqA += env * wa * (gap_ - gam) / (2.0 * dphi);
                     }
                 } else if (registryMode == 0) {
                     G += -0.35 * (wp + wa) * (epsEl + epsHy) * 0.125;

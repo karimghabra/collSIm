@@ -42,7 +42,8 @@ public:
     };
 
     void buildPoseLibrary(const Basis2D& b, const std::vector<float>& parRG,
-                          float pH, float epsEl, float epsHy);
+                          float pH, float epsEl, float epsHy,
+                          const Corr2D* corrTab = nullptr, float epsCorr = 1.f);
     void initFromScatter(int nMol, glm::vec3 boxHalf, float molLen, bool pbcOn,
                          uint32_t seed);
     void sweep(int nSweeps);

@@ -45,7 +45,15 @@ struct Basis2D {
     int nPairs() const { return nTypes * (nTypes + 1) / 2; }
 };
 
+// measured Delta-learning correction (kT per engine segment, additive on G)
+struct Corr2D {
+    uint32_t nD = 0, nPhi = 0;
+    float dstep = 0, L = 0, D = 0;
+    std::vector<float> c;         // [nD][phiA][phiB]
+};
+
 AtomTemplate loadAtoms(const std::string& path);
 Profiles loadProfiles(const std::string& path);
 Profiles2D loadProfiles2D(const std::string& path);
 Basis2D loadBasis2D(const std::string& path);
+Corr2D loadCorr2D(const std::string& path);

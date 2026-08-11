@@ -24,11 +24,13 @@ static void pairWeights(const Basis2D& b, float pH, double* w, int& nPairs) {
 }
 
 KmcProfile kmcProfile1D(const Basis2D& b, const std::vector<float>& parRG,
-                        float pH, float epsEl, float epsHy) {
+                        float pH, float epsEl, float epsHy,
+                        const Corr2D* corr, float epsCorr) {
     double w[16];
     int nPairs;
     pairWeights(b, pH, w, nPairs);
     size_t npts = size_t(b.nD) * b.nPhi * b.nPhi;
+    bool useCorr = corr && corr->nD == b.nD && corr->nPhi == b.nPhi;
     KmcProfile pr;
     pr.dstep = b.dstep;
     pr.D = b.D;
@@ -48,6 +50,7 @@ KmcProfile kmcProfile1D(const Basis2D& b, const std::vector<float>& parRG,
                     el += w[kk] * b.par[size_t(kk) * npts + idx];
                 el = std::clamp(el, -3.0, 3.0);
                 double e = epsEl * el + epsHy * parRG[2 * idx + 1];
+                if (useCorr) e += epsCorr * corr->c[idx];
                 z += exp(std::clamp(-e, -30.0, 30.0));
             }
         pr.E[iz] = (float)(-log(std::max(z / na, 1e-300)));
@@ -68,8 +71,9 @@ KmcProfile kmcProfileFunnel(const Profiles& p1, float epsEl, float epsHy,
 }
 
 double kmcWellDepth(const Basis2D& b, const std::vector<float>& parRG,
-                    float pH, float epsEl, float epsHy) {
-    KmcProfile pr = kmcProfile1D(b, parRG, pH, epsEl, epsHy);
+                    float pH, float epsEl, float epsHy,
+                    const Corr2D* corr, float epsCorr) {
+    KmcProfile pr = kmcProfile1D(b, parRG, pH, epsEl, epsHy, corr, epsCorr);
     int izc = (int)((pr.D / pr.dstep) + (b.nD - 1) * 0.5);
     int win = (int)(6.f / pr.dstep);
     float best = 0;

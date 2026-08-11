@@ -3,9 +3,10 @@
 // el(x) = sum_pairs w_ab * S_ab(x), with S_ab precomputed per titratable
 // residue-type pair and w_ab = q_a(pH) * q_b(pH). Hydrophobic channel static.
 layout(local_size_x = 256) in;
+layout(std430, binding = 13) readonly buffer CorrCh { float corr[]; };
 layout(std430, binding = 14) readonly buffer BasisEl { float basis[]; };
 layout(std430, binding = 15) readonly buffer HyStatic { float hy[]; };
-layout(rg32f, binding = 0) uniform writeonly image3D outTex;
+layout(rgba32f, binding = 0) uniform writeonly image3D outTex;
 uniform float w[16];
 uniform int nPairs;
 uniform int nTexel;
@@ -21,5 +22,5 @@ void main() {
     int x = t % sz.x;
     int y = (t / sz.x) % sz.y;
     int z = t / (sz.x * sz.y);
-    imageStore(outTex, ivec3(x, y, z), vec4(el, hy[t], 0.0, 0.0));
+    imageStore(outTex, ivec3(x, y, z), vec4(el, hy[t], corr[t], 0.0));
 }

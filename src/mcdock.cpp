@@ -27,7 +27,8 @@ double McDock::rnd() {
 }
 
 void McDock::buildPoseLibrary(const Basis2D& b, const std::vector<float>& parRG,
-                              float pH, float epsEl, float epsHy) {
+                              float pH, float epsEl, float epsHy,
+                              const Corr2D* corrTab, float epsCorr) {
     // combined pairwise landscape E(dz, pa, pb), then keep its local minima:
     // the collagen analog of the precomputed docking-match library
     int nt = (int)b.nTypes;
@@ -38,12 +39,14 @@ void McDock::buildPoseLibrary(const Basis2D& b, const std::vector<float>& parRG,
         for (int bb = a; bb < nt; ++bb) w[kk++] = qs[a] * qs[bb];
     int nPairs = kk;
     size_t npts = size_t(b.nD) * b.nPhi * b.nPhi;
+    bool useCorr = corrTab && corrTab->nD == b.nD && corrTab->nPhi == b.nPhi;
     std::vector<float> E(npts);
     for (size_t idx = 0; idx < npts; ++idx) {
         double el = 0;
         for (int k = 0; k < nPairs; ++k) el += w[k] * b.par[size_t(k) * npts + idx];
         el = std::clamp(el, -3.0, 3.0);
-        E[idx] = float(epsEl * el + epsHy * parRG[2 * idx + 1]);
+        E[idx] = float(epsEl * el + epsHy * parRG[2 * idx + 1] +
+                       (useCorr ? epsCorr * corrTab->c[idx] : 0.f));
     }
     auto at = [&](int iz, int ia, int ib) {
         ia = (ia % (int)b.nPhi + b.nPhi) % b.nPhi;

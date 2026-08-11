@@ -50,17 +50,20 @@ void Sim::recombinePH() {
                               : (at ? basisApBuf2 : basisApBuf);
         GLuint hb = pass == 0 ? (at ? hyParBuf2 : hyParBuf)
                               : (at ? hyApBuf2 : hyApBuf);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13,
+                         pass == 0 ? corrParBuf : corrZeroBuf);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 14, bb);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 15, hb);
         glBindImageTexture(0, pass == 0 ? texPar2 : texAp2, 0, GL_TRUE, 0,
-                           GL_WRITE_ONLY, GL_RG32F);
+                           GL_WRITE_ONLY, GL_RGBA32F);
         glDispatchCompute((nTexel + 255) / 256, 1, 1);
     }
     glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
 void Sim::init(const AtomTemplate& tmpl, const Profiles& prof, const Profiles2D& prof2,
-               const Basis2D& basis, const Profiles2D* prof2A, const Basis2D* basisA) {
+               const Basis2D& basis, const Profiles2D* prof2A, const Basis2D* basisA,
+               const Corr2D* corr) {
     molLen = tmpl.lengthNm;
     dPeriod = tmpl.dPeriodNm;
     profDs = prof.ds;
@@ -72,20 +75,38 @@ void Sim::init(const AtomTemplate& tmpl, const Profiles& prof, const Profiles2D&
     p2nPhi = prof2.nPhi;
     p2nR = prof2.nR;
 
-    // 3D azimuthal tables: x = phiB, y = phiA (both periodic), z = stagger
-    auto make3d = [&](GLuint& tex, const std::vector<float>& data, int nz) {
+    // 3D azimuthal tables: x = phiB, y = phiA (both periodic), z = stagger;
+    // RGBA = (el, hy, measured correction, unused)
+    hasCorr = corr && (int)corr->nD == p2nD && (int)corr->nPhi == p2nPhi;
+    auto make3d = [&](GLuint& tex, const std::vector<float>& rg, int nz,
+                      const std::vector<float>* cch) {
+        std::vector<float> rgba(size_t(nz) * p2nPhi * p2nPhi * 4, 0.f);
+        for (size_t i = 0; i < size_t(nz) * p2nPhi * p2nPhi; ++i) {
+            rgba[4 * i] = rg[2 * i];
+            rgba[4 * i + 1] = rg[2 * i + 1];
+            rgba[4 * i + 2] = cch ? (*cch)[i] : 0.f;
+        }
         glCreateTextures(GL_TEXTURE_3D, 1, &tex);
-        glTextureStorage3D(tex, 1, GL_RG32F, p2nPhi, p2nPhi, nz);
+        glTextureStorage3D(tex, 1, GL_RGBA32F, p2nPhi, p2nPhi, nz);
         glTextureSubImage3D(tex, 0, 0, 0, 0, p2nPhi, p2nPhi, nz,
-                            GL_RG, GL_FLOAT, data.data());
+                            GL_RGBA, GL_FLOAT, rgba.data());
         glTextureParameteri(tex, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTextureParameteri(tex, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTextureParameteri(tex, GL_TEXTURE_WRAP_S, GL_REPEAT);
         glTextureParameteri(tex, GL_TEXTURE_WRAP_T, GL_REPEAT);
         glTextureParameteri(tex, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
     };
-    make3d(texPar2, prof2.par, p2nD);
-    make3d(texAp2, prof2.ap, p2nR);
+    make3d(texPar2, prof2.par, p2nD, hasCorr ? &corr->c : nullptr);
+    make3d(texAp2, prof2.ap, p2nR, nullptr);
+    {
+        corrParBuf = makeSSBO(4u * size_t(p2nD) * p2nPhi * p2nPhi,
+                              hasCorr ? corr->c.data() : nullptr);
+        if (!hasCorr)
+            glClearNamedBufferData(corrParBuf, GL_R32F, GL_RED, GL_FLOAT, nullptr);
+        size_t nAp = size_t(p2nR) * p2nPhi * p2nPhi;
+        corrZeroBuf = makeSSBO(4u * nAp);
+        glClearNamedBufferData(corrZeroBuf, GL_R32F, GL_RED, GL_FLOAT, nullptr);
+    }
 
     // pH machinery: el basis tables + static hy channels
     nTypes = basis.nTypes;
@@ -475,6 +496,8 @@ void Sim::step(int nSteps) {
         prForces.set("epsEl", p.epsEl * ramp);
         prForces.set("epsHy", epsHyEff * ramp);
         prForces.set("epsNs", p.epsNs * ramp);
+        prForces.set("epsCorr", hasCorr ? p.epsCorr * ramp : 0.f);
+        prForces.set("wExp", p.wExp);
         prForces.set("epsDep", p.epsDep * ramp);
         prForces.set("depR", p.depR);
         prForces.set("apMix", p.apMix);
@@ -706,6 +729,8 @@ void Sim::mcPass(int nPasses) {
         prMc.set("epsEl", p.epsEl);
         prMc.set("epsHy", epsHyEff);
         prMc.set("epsNs", p.epsNs);
+        prMc.set("epsCorr", hasCorr ? p.epsCorr : 0.f);
+        prMc.set("wExp", p.wExp);
         prMc.set("apMix", p.apMix);
         prMc.set("kWall", p.kWall);
         prMc.set("kT", kTeff);
