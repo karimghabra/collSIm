@@ -144,15 +144,20 @@ cap). Measured well corrections at the three D-stagger families (-3.7, -6.0,
 -6.0 kT per engine segment at 67.6/132.3/203.4 nm), radial envelope refit
 from the gap scan (attR0 1.65 nm), and — per the tilt-series verdict — the
 cos^2 alignment factor demoted to polarity gating (the stagger ramp of each
-contact carries the physical angular attenuation). Result: KMC D-banding
-order from sequence-raw tables rose 0.02 -> 0.99 and docking-MC 0.69 -> 0.93,
-retiring the idealized funnel as the best-performing model. The `measured
+contact carries the physical angular attenuation). At the time this was
+validated on the KMC and docking-MC engines (D-banding order 0.02 -> 0.99 and
+0.69 -> 0.93 respectively), which retired the idealized funnel; both engines
+were removed in v0.4.0, but the tables they validated are what both BD engines
+now use. The `measured
 correction` slider scales the channel; raw fits and uncertainties are in
 `pmf_data/merge_report.txt`.
 
 ## Registry models (and what they taught us)
 
-The app ships three switchable registry models (UI: physics → registry model):
+The engines use one registry model. Two coarser ancestors (a nonspecific
+contact term, and a 1D funnel resolving stagger only) were removed in v0.4.0:
+they were strictly less informed than the measured 2D tables and existed only
+as history.
 
 - **2D azimuthal (sequence-raw, default).** U(stagger, facingA, facingB)
   computed from every residue's true (axial, azimuthal) surface position,
@@ -185,7 +190,7 @@ self-crush; timestep displacement must be clamped below the excluded-volume
 shell or filaments tunnel; and a segment cell grid must use cell ≥ segment
 length + cutoff or contacts silently vanish.
 
-## Reaching rare events without giving up real kinetics (v0.4.0)
+## Reaching rare events without giving up real kinetics (WE, `--advanced`)
 
 The honest limit of everything below is that BD has the only trustworthy clock
 and reaches microseconds, while fibrillation takes 30–120 minutes. The usual
@@ -193,7 +198,8 @@ temptations — bigger MC steps, force-biased proposals, softer potentials — a
 buy reach by damaging the dynamics, and a gradient-following proposal cannot
 cross a barrier to a *different* registry well anyway.
 
-The **WE tab** takes the other route. Weighted ensemble runs many walkers of
+The **WE tab** (hidden unless the app is started with `--advanced`) takes the
+other route. Weighted ensemble runs many walkers of
 plain, unadjusted Brownian dynamics — the propagator is not modified in any
 way — and redistributes only *computational effort*: walkers that climb a
 progress coordinate are split, ones that fall back are merged, and each carries
@@ -262,7 +268,9 @@ into (12–20 walkers across 8 bins).
 Brute force reproduces itself across independent batches (1.23e-4, 1.20e-4,
 1.21e-4 /ns), so the reference is solid and the discrepancy is on the WE side.
 Until this is resolved, WE rates are a lower bound and are **not** wired into
-the KMC tab.
+anything downstream. Worth re-running against the rigorous engine, whose
+equilibrium is exact -- the brute-force reference was itself measured on the
+fast engine.
 
 Remaining limitations: recycling draws from a small fixed pool of dispersed
 starts rather than a sampled basin distribution, so the reactant state is not
@@ -272,68 +280,214 @@ falls within 5τ). Both push the estimate the same way — toward under-counting
 flux — so with τ chosen too large a WE rate here is a lower bound, not a
 two-sided estimate.
 
-## Three engines, three timescales
+## Three engines, and what each one is for
 
-The same measured interaction tables drive three independent simulation
-methodologies, each in its own tab, because no single method spans molecular
-detail and hours of fibrillogenesis:
+All three tabs drive the same `Sim` on the same molecules, sharing the measured
+interaction tables, the cell grid, the neighbour lists and the renderer. The
+tab selects the *propagator*, so you can switch mid-run and watch the same
+configuration evolve under any of them.
 
-| Tab | Method | Reaches | Trades away |
+| Tab | Propagator | Samples `exp(-U/kT)`? | dt |
 |---|---|---|---|
-| BD | overdamped Langevin on 96-bead filaments, GPU | ~µs | wall-clock: hours of assembly is out of reach |
-| MC | segmental docking Monte Carlo (below) | ~ms/sweep-calibrated | dynamics are moves, not trajectories |
-| KMC | registry-resolved Gillespie kinetics | hours | molecules are events, not geometry |
+| **BD - fast** | Euler-Maruyama + XPBD projection + clamps | **no potential exists** | 0.3 ns effective |
+| **BD - rigorous** | explicit `U`, harmonic bonds, no clamps, Metropolis-adjusted | **yes, exactly** | 5e-4 ns |
+| **BD - constrained** | same force field, bonds rigid via SHAKE | not yet (no Fixman term) | 0.02 ns |
 
-BD has the trustworthy clock and the least approximation; KMC is the only one
-that reaches real fibrillation times (30–120 min lag). The gap is ~10⁸: three
-hours of assembly at BD's timestep is roughly 115 years of wall clock.
+The fast engine is ~50x cheaper per simulated nanosecond than the rigorous one
+and is the only one that reaches interesting assembly. The rigorous engine is
+the reference that says what that costs. The constrained engine removes the
+stiffest mode from the spectrum so dt can rise 40x, and is the more faithful
+limit -- collagen's real axial stiffness is `EA/L ~ 675 kT/nm^2` (E ~ 5 GPa,
+A = pi(0.75 nm)^2), i.e. 1.3% rms strain, *stiffer* than any spring worth
+integrating. Softening bonds to buy dt is therefore not a legitimate move; the
+rigid limit is.
 
-### Segmental docking MC (v0.3.0)
+### Why the fast engine has no potential energy function
 
-Following `docs/segmental_docking_mc.md`, each molecule is a chain of
-persistence-length **links** (default 5 × 58 nm) — rigid docking bodies joined
-by discrete-WLC hinges (κ = Lp/ℓ, verified: ⟨cos θ⟩ = 0.37 vs the exact
-e^(−ℓ/Lp) = 0.38). Link-pair energy is the **contact integral** of the merged
-registry kernel: nine samples along each link's overlap, each contributing
-env(d)·U(Δ_local, φa, φb) weighted by arc length, so a tilted or bent contact
-prices itself through the stagger ramp rather than through any angular falloff
-term (the tilt-series verdict — see below). Moves are:
+Not "an approximate one" -- none. Four separate things make its force field
+non-conservative, and each was added for stability rather than for physics:
 
-- **transport** — rigid translate/rotate, with an adaptive step (free
-  molecules stride 3× further than crowded ones) and the Hastings volume-ratio
-  correction that state-dependent widths require;
-- **dock hop** — place one link at a pose-library minimum on a neighbor link
-  and drag the rest of the chain rigidly, so internal bend energy is exactly
-  preserved and acceptance prices only the new contacts;
-- **axial slide** — translate along a link's own tangent, including ±D and
-  ±2D jumps; sweeps a thin tube, so it is the move that still works inside a
-  dense gel and it is what anneals registry;
-- **pivot** — rotate everything past one joint, paying only that joint's bend.
+| Element | Why it breaks |
+|---|---|
+| XPBD bond projection | a projection, not a force; a projected Euler-Maruyama step has no invariant Gibbs measure |
+| `attMag` saturation | scales pair forces by a factor computed from the **previous** step, so the drift is not even a function of the current state |
+| `fMax` force clamp | truncates the pair force |
+| `dxMax` displacement clamp | clips the proposal; the noise is no longer Gaussian |
 
-Sim time is calibrated from rod translational diffusion (Δt = σ²/6D) on the
-base transport hop; adaptive hops cover more ground than that credits, so
-reported MC time is a **lower bound**. Dock hops are the source paper's biased
-basin-finding move — the placement is deterministic, so its exact reverse is
-not a library placement. The other three moves are reversible; the MC tab has
-a switch to run with dock hops off for a strictly detailed-balance chain.
+The displacement clamp is not a rare-event guard. At the shipped defaults the
+per-axis thermal noise is 0.293 nm, so |dx| ~ sigma*chi_3 exceeds
+`dxMax` = 0.35 with probability ~0.70 from thermal motion alone, before any
+force contributes. Measured **74.2%** of steps (40 windows, bonded forces
+only). For most of this project's life the clamp, not the force field, was
+deciding where the beads went.
 
-**What it reproduces.** An isolated pair of 5-link molecules docks at −1.98 D
-with all five link contacts reporting the same stagger — the rigid v1 model
-parks at zero stagger instead, so flexibility *improves* pair registration.
-The hinges reproduce the target persistence length (⟨cos θ⟩ = 0.37 vs the
-exact e^(−ℓ/Lp) = 0.38), and the bead polyline handed to the renderer holds
-bond length to < 0.001 nm while showing real curvature (⟨R_ee⟩/L ≈ 0.85 bound,
-against 0.57 for a free chain — bound molecules straighten, as they should).
+Measuring this correctly needs care: the force pass zeroes the stats buffer
+when `totalSteps % 16 == 0`, so sampling off that boundary divides by 16 steps
+while accumulating fewer -- and stepping 16 preserves the phase, so averaging
+repeats the same wrong window rather than washing it out. `--equipart` aligns
+to the boundary first.
 
-In crowds, registration is **density-limited**, which is the honest result: at
-2 mg/mL the system anneals to band coherence 0.56 / D-fraction 64% and is
-still climbing at 4k sweeps, while a 5.9 mg/mL quench percolates into a single
-cluster before it can register and reaches only 0.42 / 48%. This mirrors the
-KMC tab, where slowing growth tenfold improves band order, and the wet-lab
-fact that fast concentrated quenches give poorly banded aggregates. The rigid
-limit scores higher (0.85 / 87%) because rods reach global phase order that
-flexible chains reach only slowly — a sampling gap, not an energetic one.
-Throughput: 134 sweeps/s at N=100, 22 at N=300 (5 links), 77 rigid.
+### The rigorous engine: U written out
+
+```
+U = sum_bonds  1/2 kBond (|x_{i+1} - x_i| - a)^2      kBond from p.bondStrain
+  + sum_angles kBend (1 - cos theta)                   kBend = Lp kT / a
+  + sum_pairs  1/2 kRep (rRep - d)^2                   d = closest approach
+  + sum_pairs  [env(d) - env(cutoff)] G(D, phiA, phiB)
+  + sum_pairs  -epsDep [exp(-md^2/depR^2) - ...]
+  + sum_beads  1/2 kWall max(|x_i| - L_i, 0)^2
+  + sum_xlinks 1/2 kX (l - rest)^2
+```
+
+Three choices worth stating. The registry stagger and facing angles are
+evaluated at **segment midpoints**, not at the closest-approach point: a
+minimiser would make `U` depend on an inner optimisation whose gradient needs
+`du/dx`, and that is also where the closest-point solve's clamping puts kinks.
+Pair energies are **shifted to zero at the cutoff** -- free in force, but
+without it a pair entering the neighbour list steps `U` by ~0.01 kT, invisible
+in a trajectory and fatal to a Metropolis ratio. The energy reduction runs in
+**double**: `U` reaches ~1e5 kT while the Metropolis test needs `dU` to
+~0.01 kT, and differencing two float32 totals of that size leaves nothing.
+
+`--gradtest` finite-differences `U` against the drift, one bead at a time
+(a direction spread over all 3N coordinates displaces each bead by ~2 ulp of a
+float32 coordinate and measures rounding instead of physics):
+
+| model | median error | vs mean force |
+|---|---|---|
+| bonded + steric only | 1.5-4e-3 kT/nm | 0.01-0.02% (noise floor) |
+| full, with registry | 1.9-3.6e-2 kT/nm | 0.1-0.2% |
+
+The bonded gradients are exact. The registry term leaves a systematic ~0.2%,
+which is the deliberately omitted `d(facing angle)/dx` and `d(gate)/dx`.
+Metropolis-Hastings needs an exact `U` but tolerates an approximate drift, so
+this costs acceptance rate, not correctness.
+
+### MALA, and what acceptance actually means
+
+Positions and twist are proposed jointly and accepted together; the whole test
+runs on the GPU because a readback per step would stall the pipeline. Both
+endpoints use the same neighbour list, or their energy difference is
+meaningless.
+
+Metropolis makes the sampled distribution exactly `exp(-U/kT)` at **any** dt.
+So acceptance is not an accuracy readout -- it is a **kinetics** readout. A
+rejection freezes the system for a step, which Brownian motion never does, so
+the trajectory is only interpretable as dynamics while acceptance is near 1.
+
+`--dtscan` at 12 molecules (1140 bonds), against the Gaussian-chain prediction
+`erfc(sqrt(10 nBonds) a^1.5 / 2 sqrt 2)` with `a = kBond dt / gamma`:
+
+| dtRig (ns) | dt/tau | accept | predicted |
+|---|---|---|---|
+| 5e-4 | 0.019 | 0.761 | 0.888 |
+| 1e-3 | 0.038 | 0.616 | 0.690 |
+| 2e-3 | 0.076 | 0.284 | 0.259 |
+| 5e-3 | 0.191 | 0.000 | 0.000 |
+
+Measurement tracks the closed form, so the sampler is sound. Note the
+prediction must use the **chain** mode spectrum: a bead-spring chain has
+stiffnesses `2k(1 - cos q)` spanning 0 to `4k`, and `<(2-2cos q)^3> = 20`.
+Using the bare spring constant understates the variance twentyfold -- an error
+that initially looked like a bug in the sampler and was not.
+
+Acceptance falls as `N^(-1/3)`, so reaching 0.99 -- where the trajectory is
+still dynamics -- needs dt ~1e-4 ns at 12 molecules and ~3e-5 ns at 400. That
+is the honest cost, and it is why constrained bonds (which remove the stiffest
+mode outright, worth ~15x) is the next thing worth building.
+
+### The constrained engine: rigid bonds (`BD - constrained`)
+
+The bond is the fastest mode by a wide margin, and it is the only reason dt has
+to be so small:
+
+| mode | k (kT/nm^2) | tau = gamma/k (ns) |
+|---|---|---|
+| **harmonic bond** | 268 | **0.026** |
+| attraction well curvature | ~18 | 0.39 |
+| soft core `kRep` | 15 | 0.47 |
+| bending, transverse (`kBend/a^2`) | 2.1 | 3.3 |
+
+Removing it raises the ceiling to the next mode at ~0.39 ns. This tab does that
+with red-black SHAKE: `xpbd.comp` already solves one constraint exactly and
+skips alternate bonds so no two touching constraints run together, which makes
+iterating it Gauss-Seidel SHAKE. The difference from tab 1 is the sweep count.
+**Tab 1 runs 4 sweeps and does not converge** -- its measured 0.052 nm bond
+spread is residual projection error, not physics, which is why its `sd(l)` sits
+14% below the analytic value while the rigorous engine matches it to 0.4%.
+
+**Two pieces are missing, and both fail silently.** Constraining changes the
+equilibrium measure: recovering the stiff-spring statistics needs the Fixman
+potential `U_F = (kT/2) ln det(J J^T)`, where for a bead chain `J J^T` is
+tridiagonal with 2 on the diagonal and `-cos theta_k` off it -- angle-dependent,
+so not a constant that can be dropped. And Metropolis adjustment on a manifold
+needs a tangent-space proposal plus a reverse-projection check
+(Zappa/Holmes-Cerfon/Goodman 2018; Lelievre/Rousset/Stoltz 2019); omitting the
+check breaks detailed balance.
+
+Neither shows up as an instability or a visibly wrong trajectory. They show up
+as slightly wrong angle statistics -- which is exactly what `--equipart` below
+measures, and why this tab shipped unadjusted rather than unmeasured.
+
+### Does either engine sample what it claims? (`--equipart`)
+
+With pair interactions off, `U` is bonds + bending only. In bond-vector
+coordinates the Jacobian is `prod l_i^2`, both terms separate, and each has a
+closed-form equilibrium:
+
+```
+p(l)       ~ l^2 exp(-k (l-a)^2 / 2kT)   =>  <l> = a + 2 sigma^2 / a
+p(cos t)   ~ exp(-kappa (1 - cos t))     =>  <cos t> = coth kappa - 1/kappa
+```
+
+The second is the Langevin function and depends on nothing but
+`kappa = kBend/kT`. Both engines have the same `kBend`, so both must reproduce
+it. 4 molecules, 2500 ns each, all quarters flat:
+
+| engine | sd(l) | `<cos t>` | Lp (nm) | accept |
+|---|---|---|---|---|
+| **exact** | **0.06113** | **0.94906** | **58.5** | — |
+| BD - fast | 0.05227 | 0.96147 | **77.8** | — |
+| BD - rigorous, unadjusted | 0.06138 | 0.95157 | 61.6 | — |
+| BD - rigorous + MALA | 0.06136 | 0.95194 | 62.1 | 0.744 |
+| BD - constrained (SHAKE) | 0.00160 | 0.95180 | 61.9 | — |
+
+**The fast engine is 33% too stiff.** Its molecules behave as though the
+persistence length were 78 nm rather than the 60 nm configured, and its bond
+spread is 14% low -- and that 0.052 nm spread is not a soft bond, it is
+unconverged SHAKE, since tab 1 runs only 4 sweeps. Any fast-engine result that
+depends on chain flexibility -- how readily a molecule conforms to a neighbour,
+how much entropy it surrenders on binding -- carries that stiffening.
+
+The rigorous and constrained engines land within 0.3% of the analytic
+`<cos t>` (6% in Lp, which amplifies the error because `Lp = -a/ln<cos t>` and
+the log is near zero). Their quarters are still drifting down -- MALA runs
+0.95325 -> 0.95078 -- so the residual is mostly incomplete sampling rather than
+bias.
+
+**The constrained engine agrees with the flexible ones to within 0.0002 in
+`<cos t>`**, which is below the scatter between the two flexible runs. So the
+Fixman correction, at this bending stiffness, is smaller than this measurement
+can resolve: rigid bonds reproduce the stiff-spring statistics here. That is
+the empirical answer to whether the missing `U_F` term matters, and it is why
+this tab is usable in practice despite being formally incomplete. It is a
+statement about *this* `kappa`, not a general one -- a floppier chain would
+need the term.
+
+MALA and the unadjusted propagator agree closely here, which is the expected
+result at dt = 1e-3: the discretisation bias is genuinely small at that step.
+The point of the Metropolis correction is not that it beats the unadjusted run
+at a good dt -- it is that it *guarantees* the agreement instead of requiring
+you to assume it, and reports acceptance when the assumption fails.
+
+**Two traps this test set, both worth knowing.** Molecules are laid down as
+straight rods, and bending relaxes slowly enough that a 400 ns run reports an
+equilibration artefact rather than a property of the engine; every run here is
+pre-relaxed from a shared state and prints `<cos t>` per quarter so drift is
+visible. And **nominal simulated time is not a valid budget for MALA**: a
+rejected step advances the clock while the system stays put, so a
+low-acceptance run can report thousands of nanoseconds having explored almost
+nothing. Read the acceptance column before reading the row.
 
 ## Data provenance
 
@@ -346,7 +500,7 @@ Throughput: 134 sweeps/s at N=100, 22 at N=300 (5 links), 77 rigid.
 
 ```
 tools/     Python pipeline (structure + interaction profiles)
-assets/    atoms.bin, profiles.bin, tropocollagen.pdb, validation plots
+assets/    atoms.bin, profiles2d*.bin, correction2d.bin, tropocollagen.pdb
 src/       C++ app (sim orchestration, renderer, UI)
 shaders/   GLSL compute + render kernels
 data/      downloaded source data (1K6F, FASTA, CCD)

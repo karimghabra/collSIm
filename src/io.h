@@ -24,12 +24,6 @@ struct AtomTemplate {
     std::vector<AtomRec> atoms;
 };
 
-struct Profiles {
-    float ds = 0, L = 0, D = 0;
-    uint32_t nPar = 0, nAp = 0;
-    std::vector<float> elPar, hyPar, elAp, hyAp;
-};
-
 struct Profiles2D {
     float dstep = 0, L = 0, D = 0, S0 = 0;
     uint32_t nD = 0, nPhi = 0, nR = 0;
@@ -53,7 +47,6 @@ struct Corr2D {
 };
 
 AtomTemplate loadAtoms(const std::string& path);
-Profiles loadProfiles(const std::string& path);
 Profiles2D loadProfiles2D(const std::string& path);
 Basis2D loadBasis2D(const std::string& path);
 Corr2D loadCorr2D(const std::string& path);

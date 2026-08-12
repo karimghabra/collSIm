@@ -39,8 +39,6 @@ add_executable(collagenSim
   src/shader.cpp
   src/io.cpp
   src/sim.cpp
-  src/kmc.cpp
-  src/mcdock.cpp
   src/we.cpp
   src/render.cpp)
 target_include_directories(collagenSim PRIVATE extern src)
@@ -49,3 +47,25 @@ if (MSVC)
   target_compile_options(collagenSim PRIVATE /W3 /wd4267 /wd4244)
   target_compile_definitions(collagenSim PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX)
 endif()
+
+# Scale ladder (docs/multiscale_framework.md). Deliberately free of GL, GLM and
+# every other dependency: a rung is a free energy, a mobility and a propagator,
+# and none of those need a graphics context. It also means the validation gates
+# run anywhere, including in CI on a machine with no GPU.
+set(SCALE_SOURCES
+  src/scale/level.cpp
+  src/scale/mala.cpp
+  src/scale/kramers.cpp
+  src/scale/microfibril.cpp)
+
+add_library(scale STATIC ${SCALE_SOURCES})
+target_include_directories(scale PUBLIC src)
+
+add_executable(scale_selftest tests/scale_selftest.cpp)
+target_link_libraries(scale_selftest PRIVATE scale)
+if (MSVC)
+  target_compile_options(scale PRIVATE /W3)
+  target_compile_options(scale_selftest PRIVATE /W3)
+endif()
+enable_testing()
+add_test(NAME scale_selftest COMMAND scale_selftest)

@@ -1,0 +1,232 @@
+#version 460
+// Conservative segment-segment interactions -- the RIGOROUS engine's pair pass.
+//
+// Unlike forces.comp, this emits the potential ENERGY of every pair alongside
+// the drift, and nothing here is clamped, truncated or saturated. That is the
+// whole point: U must be a genuine function of the configuration for a
+// Metropolis correction, an equipartition test, or a replica exchange to mean
+// anything.
+//
+//   U_pair = 1/2 kRep (rRep - d)^2                     [d = closest approach]
+//          + env(d) * G(Delta, phiA, phiB)             [registry attraction]
+//          - epsDep * exp(-(d - attR0)^2 / depR^2)     [depletion]
+//
+//   env(d) = exp(-(d - attR0)^2 / attW^2)
+//   G      = -epsNs + wp*g_par(Delta,phiA,phiB) + wa*g_ap(rho,phiA,phiB)
+//
+// Delta and the facing angles are evaluated at the segment MIDPOINTS, not at
+// the closest-approach point. A minimiser would make U depend on the result of
+// an inner optimisation, and its gradient would then need du/dx and dv/dx from
+// the closest-point solve -- which is also where that solve's clamping puts
+// kinks. env and the hard core still use true closest approach, so excluded
+// volume stays exact.
+//
+// Pair terms are written HALVED: the Verlet list is symmetric (nbr_collect
+// gives i->j and j->i), so both members of a pair report it.
+layout(local_size_x = 128) in;
+layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
+layout(std430, binding = 1) readonly buffer NbrList { uint nbr[]; };
+layout(std430, binding = 2) readonly buffer NbrCnt { uint nbrCnt[]; };
+layout(std430, binding = 3) writeonly buffer SegF { vec4 segF[]; };
+layout(std430, binding = 4) writeonly buffer SegE { float segE[]; };
+layout(std430, binding = 6) readonly buffer Frames { vec4 frm[]; };
+layout(std430, binding = 10) buffer Stats { uint stats[]; };
+layout(std430, binding = 12) writeonly buffer SegTq { float segTq[]; };
+layout(binding = 2) uniform sampler3D parTex2;   // x=phiB, y=phiA, z=stagger
+layout(binding = 3) uniform sampler3D apTex2;
+
+uniform int statsOn;
+uniform int nbrCap;
+uniform int pbc;
+uniform int nSeg;
+uniform int nBeads;
+uniform float segLen;
+uniform vec3 boxHalf;
+uniform float rRep, kRep, attR0, attW, cutoff;
+uniform float epsEl, epsHy, epsNs, apMix, epsDep, depR, epsCorr, wExp;
+uniform float dPeriod;
+uniform float p2Dstep, p2S0;
+uniform int p2nD, p2nR, p2nPhi;
+
+vec3 qrot(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
+
+vec3 samp3Par(float delta, float pa, float pb) {
+    vec3 tc = vec3(pb / 6.2831853 + 0.5, pa / 6.2831853 + 0.5,
+                   (delta / p2Dstep + float(p2nD - 1) * 0.5 + 0.5) / float(p2nD));
+    return texture(parTex2, tc).rgb;
+}
+vec3 samp3Ap(float rho, float pa, float pb) {
+    vec3 tc = vec3(pb / 6.2831853 + 0.5, pa / 6.2831853 + 0.5,
+                   ((rho + 2.0 * p2S0) / p2Dstep + 0.5) / float(p2nR));
+    return texture(apTex2, tc).rgb;
+}
+float gOf(vec3 u) { return epsEl * u.r + epsHy * u.g + epsCorr * u.b; }
+
+vec3 mimg(vec3 d) {
+    if (pbc == 0) return d;
+    vec3 bs = 2.0 * boxHalf;
+    return d - bs * round(d / bs);
+}
+
+// closest points on segments P1+s*D1, P2+t*D2, s,t in [0,1]
+void segClosest(vec3 P1, vec3 D1, vec3 P2, vec3 D2, out float s, out float t) {
+    vec3 r = P1 - P2;
+    float a = dot(D1, D1), e = dot(D2, D2);
+    float b = dot(D1, D2), c = dot(D1, r), f = dot(D2, r);
+    float den = a * e - b * b;
+    if (e < 1e-9 || a < 1e-9) { s = 0.0; t = 0.0; return; }
+    s = (den > 1e-7) ? clamp((b * f - c * e) / den, 0.0, 1.0) : 0.0;
+    t = (b * s + f) / e;
+    if (t < 0.0)      { t = 0.0; s = clamp(-c / a, 0.0, 1.0); }
+    else if (t > 1.0) { t = 1.0; s = clamp((b - c) / a, 0.0, 1.0); }
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(nSeg)) return;
+    int molI = int(i) / (nBeads - 1);
+    int kI = int(i) % (nBeads - 1);
+    int bi = molI * nBeads + kI;
+    vec3 A0 = pos[bi].xyz, A1 = pos[bi + 1].xyz;
+    vec3 dA = A1 - A0;
+    vec3 tA = normalize(dA);
+    vec3 mA = 0.5 * (A0 + A1);
+    float sA0 = float(kI) * segLen;
+
+    vec3 F1 = vec3(0.0), F2 = vec3(0.0);
+    float tqA = 0.0;
+    float eSum = 0.0;
+
+    uint num = nbrCnt[i];
+    uint lbase = i * uint(nbrCap);
+    for (uint kk = 0u; kk < num; ++kk) {
+        uint j = nbr[lbase + kk];
+        int molJ = int(j) / (nBeads - 1);
+        int kJ = int(j) % (nBeads - 1);
+        bool same = (molJ == molI);
+        int bj = molJ * nBeads + kJ;
+        vec3 B0 = pos[bj].xyz, B1 = pos[bj + 1].xyz;
+        // shift the whole partner segment to its nearest periodic image
+        vec3 mB0 = 0.5 * (B0 + B1);
+        vec3 shift = mimg(mB0 - mA) - (mB0 - mA);
+        B0 += shift;
+        B1 += shift;
+        vec3 mB = mB0 + shift;
+
+        float u, v;
+        segClosest(A0, dA, B0, B1 - B0, u, v);
+        vec3 xa = A0 + u * dA;
+        vec3 xb = B0 + v * (B1 - B0);
+        vec3 dvec = xb - xa;
+        float d = length(dvec);
+        if (d > cutoff || d < 1e-5) continue;
+        vec3 nh = dvec / d;
+
+        vec3 F = vec3(0.0);        // acts at the closest-approach point
+        vec3 Fm = vec3(0.0);       // acts at the midpoints
+        float e = 0.0;
+
+        // --- hard core: exact gradient of 1/2 kRep (rRep - d)^2 -------------
+        if (d < rRep) {
+            F += -kRep * (rRep - d) * nh;
+            e += 0.5 * kRep * (rRep - d) * (rRep - d);
+        }
+        if (statsOn == 1 && d < 1.0) atomicAdd(stats[0], 1u);
+
+        if (!same) {
+            if (statsOn == 1 && d < 2.5) atomicAdd(stats[1], 1u);
+            float env = exp(-((d - attR0) * (d - attR0)) / (attW * attW));
+            float denv = env * (-2.0 * (d - attR0) / (attW * attW));
+            vec3 tB = normalize(B1 - B0);
+            float ca = dot(tA, tB);
+            float wp = ca > 0.0 ? pow(ca, wExp) : 0.0;
+            float wa = ca < 0.0 ? pow(-ca, wExp) * apMix : 0.0;
+            float sB0 = float(kJ) * segLen;
+            float G = -epsNs, dG = 0.0;
+            // symmetrized pair axis: both members compute the same one, so the
+            // registry sliding force is exactly equal-and-opposite
+            float sgn = ca >= 0.0 ? 1.0 : -1.0;
+            vec3 tP = tA + sgn * tB;
+            float lp = length(tP);
+            tP = lp > 1e-5 ? tP / lp : tA;
+            // midpoint-evaluated registry coordinates (u = v = 1/2)
+            vec3 dm = mB - mA;
+            float axial = dot(dm, tP);
+            float delta = (sA0 - sB0) + axial;
+            float rho = (sA0 + sB0) + segLen + axial;
+            if (statsOn == 1 && d < 2.5 && wp > 0.5) {
+                float dk = abs(delta) / dPeriod;
+                float frac = abs(dk - round(dk));
+                if (round(dk) >= 1.0 && frac * dPeriod < 3.0)
+                    atomicAdd(stats[2], 1u);
+            }
+            if (wp > 1e-3 || wa > 1e-3) {
+                vec4 qa0 = frm[bi], qa1 = frm[bi + 1];
+                if (dot(qa0, qa1) < 0.0) qa1 = -qa1;
+                vec4 qA = normalize(mix(qa0, qa1, 0.5));
+                vec4 qb0 = frm[bj], qb1 = frm[bj + 1];
+                if (dot(qb0, qb1) < 0.0) qb1 = -qb1;
+                vec4 qB = normalize(mix(qb0, qb1, 0.5));
+                vec3 nA = qrot(qA, vec3(1, 0, 0)), bA = qrot(qA, vec3(0, 1, 0));
+                vec3 nB = qrot(qB, vec3(1, 0, 0)), bB = qrot(qB, vec3(0, 1, 0));
+                // facing angles measured along the midpoint separation, so
+                // they too are free of the closest-point minimiser
+                vec3 nm = length(dm) > 1e-5 ? normalize(dm) : nh;
+                float pa = atan(dot(nm, bA), dot(nm, nA));
+                float pb = atan(dot(-nm, bB), dot(-nm, nB));
+                float dphi = 6.2831853 / float(p2nPhi);
+                if (wp > 1e-3) {
+                    float g0 = gOf(samp3Par(delta, pa, pb));
+                    float gzp = gOf(samp3Par(delta + p2Dstep, pa, pb));
+                    float gzm = gOf(samp3Par(delta - p2Dstep, pa, pb));
+                    float gap_ = gOf(samp3Par(delta, pa + dphi, pb));
+                    float gam = gOf(samp3Par(delta, pa - dphi, pb));
+                    G += wp * g0;
+                    dG += wp * (gzp - gzm) / (2.0 * p2Dstep);
+                    tqA += env * wp * (gap_ - gam) / (2.0 * dphi);
+                }
+                if (wa > 1e-3) {
+                    float g0 = gOf(samp3Ap(rho, pa, pb));
+                    float gzp = gOf(samp3Ap(rho + p2Dstep, pa, pb));
+                    float gzm = gOf(samp3Ap(rho - p2Dstep, pa, pb));
+                    float gap_ = gOf(samp3Ap(rho, pa + dphi, pb));
+                    float gam = gOf(samp3Ap(rho, pa - dphi, pb));
+                    G += wa * g0;
+                    dG += wa * (gzp - gzm) / (2.0 * p2Dstep);
+                    tqA += env * wa * (gap_ - gam) / (2.0 * dphi);
+                }
+            }
+            // U = [env(d) - env(cutoff)] * G(Delta, phiA, phiB)
+            //
+            // The shift costs nothing in force (it is constant in d) but it
+            // makes U CONTINUOUS as a pair crosses the cutoff. Without it a
+            // pair entering the list steps U by env(cutoff)*G ~ 0.01 kT, which
+            // is invisible in a trajectory and fatal to both finite-difference
+            // gradients and the Metropolis ratio.
+            float envC = exp(-((cutoff - attR0) * (cutoff - attR0)) / (attW * attW));
+            e += (env - envC) * G;
+            F  += denv * G * nh;      // radial part, at the closest point
+            Fm += env * dG * tP;      // registry sliding, at the midpoint
+
+            if (epsDep > 0.0) {
+                float md = max(d - attR0, 0.0);
+                float ed = exp(-(md * md) / (depR * depR));
+                float mdC = max(cutoff - attR0, 0.0);
+                float edC = exp(-(mdC * mdC) / (depR * depR));
+                e += -epsDep * (ed - edC);
+                F += (epsDep * 2.0 * md / (depR * depR)) * ed * nh;
+            }
+        }
+
+        // closest-point forces split by the contact parameter, midpoint
+        // forces split evenly -- matching where each term's energy is defined
+        F1 += (1.0 - u) * F + 0.5 * Fm;
+        F2 += u * F + 0.5 * Fm;
+        eSum += 0.5 * e;              // symmetric list: halve
+    }
+
+    segF[2u * i] = vec4(F1, 0.0);
+    segF[2u * i + 1u] = vec4(F2, 0.0);
+    segTq[i] = tqA;
+    segE[i] = eSum;
+}

@@ -1,0 +1,44 @@
+#version 460
+// Two-stage sum of a float array into a double accumulator.
+//
+// Double matters here, and not for the reason it usually does. U for a
+// 400-molecule box runs to ~1e5 kT while the Metropolis test needs dU to
+// ~0.01 kT. Differencing two float32 totals of that size leaves about 0.01 kT
+// of resolution -- the same order as the quantity being measured. Accumulating
+// in double removes the cancellation entirely.
+//
+//   stage 0: srcF[0..n)  -> part[workgroup]        (one element per thread)
+//   stage 1: part[0..n)  -> total[slot]            (single workgroup, strided)
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) readonly buffer SrcF { float srcF[]; };
+layout(std430, binding = 9) buffer Partial { double part[]; };
+layout(std430, binding = 14) buffer Total { double total[]; };
+
+uniform int n;
+uniform int stage;
+uniform int slot;
+uniform float scale;     // applied in stage 0 (e.g. -1 to subtract a term)
+uniform int accumulate;  // stage 1: 1 = add into total[slot], 0 = overwrite
+
+shared double sdata[256];
+
+void main() {
+    uint tid = gl_LocalInvocationID.x;
+    double v = 0.0lf;
+    if (stage == 0) {
+        uint gid = gl_GlobalInvocationID.x;
+        if (gid < uint(n)) v = double(srcF[gid]) * double(scale);
+    } else {
+        for (uint k = tid; k < uint(n); k += 256u) v += part[k];
+    }
+    sdata[tid] = v;
+    barrier();
+    for (uint s = 128u; s > 0u; s >>= 1u) {
+        if (tid < s) sdata[tid] += sdata[tid + s];
+        barrier();
+    }
+    if (tid == 0u) {
+        if (stage == 0) part[gl_WorkGroupID.x] = sdata[0];
+        else total[slot] = (accumulate == 1 ? total[slot] : 0.0lf) + sdata[0];
+    }
+}

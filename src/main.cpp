@@ -1,4 +1,4 @@
-﻿// collagenSim â€” real-time GPU Brownian dynamics of type I collagen fibril
+// collagenSim â€” real-time GPU Brownian dynamics of type I collagen fibril
 // self-assembly with full-atom rendering of every tropocollagen.
 #include <glad/gl.h>
 
@@ -15,14 +15,13 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "camera.h"
 #include "io.h"
-#include "kmc.h"
-#include "mcdock.h"
 #include "we.h"
 #include "render.h"
 #include "shader.h"
@@ -34,11 +33,9 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 static OrbitCamera g_cam;
 static bool g_rotating = false, g_panning = false;
 static double g_mx = 0, g_my = 0;
-static int g_appMode = 0;          // 0 BD, 1 MC docking, 2 KMC
-static McDock g_mcd;
-static int g_mcdTestN = 300;
-static int g_mcdTestSweeps = 2000;
-static bool g_mcdAnneal = false;
+// 0 = BD fast (Euler-Maruyama), 1 = BD rigorous (MALA), 3 = WE (--advanced only)
+static int g_appMode = 0;
+static bool g_advanced = false;    // reveals the weighted-ensemble tab
 // weighted-ensemble test knobs (pass BEFORE --wetest; the arg loop returns on it)
 static int g_weNmol = 40, g_weTarget = 3, g_weTau = 1500, g_weIters = 60;
 static int g_weBrute = 24, g_weBruteSteps = 30000, g_weWalkers = 4;
@@ -47,7 +44,12 @@ static WeRun g_we;
 static WeParams g_weUi;
 static bool g_weActive = false;
 static int g_weIdx = 0;
-static int g_mcdSweeps = 4;
+static bool g_gradTest = false;    // finite-difference check of U vs the drift
+static bool g_dtScan = false;      // MALA acceptance vs timestep
+static bool g_malaProbe = false;   // dump the Metropolis ratio's components
+static bool g_equipart = false;    // equipartition test across engines
+static double g_equipNs = 300.0;   // simulated ns sampled per engine
+static int g_gradNmol = 12, g_gradSettle = 3000;
 
 static void mouseButton(GLFWwindow* w, int b, int a, int) {
     if (ImGui::GetIO().WantCaptureMouse) { g_rotating = g_panning = false; return; }
@@ -81,7 +83,7 @@ struct Args {
     int registry = -1;
     float pH = -1, temp = -999, fibRad = -1, fibLen = -1;
     int pbc = 0;
-    int mc = 0;
+    int engine = 0;
     int xlink = 0;
 };
 
@@ -115,7 +117,15 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "--fibrad" && i + 1 < argc) a.fibRad = (float)atof(argv[++i]);
         else if (s == "--fiblen" && i + 1 < argc) a.fibLen = (float)atof(argv[++i]);
         else if (s == "--pbc") a.pbc = 1;
-        else if (s == "--mc") a.mc = 1;
+        else if (s == "--advanced") g_advanced = true;
+        else if (s == "--gradtest") g_gradTest = true;
+        else if (s == "--dtscan") g_dtScan = true;
+        else if (s == "--equipart") g_equipart = true;
+        else if (s == "--equipns" && i + 1 < argc) g_equipNs = atof(argv[++i]);
+        else if (s == "--malaprobe") { g_dtScan = true; g_malaProbe = true; }
+        else if (s == "--engine" && i + 1 < argc) a.engine = next(0);
+        else if (s == "--gradnmol" && i + 1 < argc) g_gradNmol = atoi(argv[++i]);
+        else if (s == "--gradsettle" && i + 1 < argc) g_gradSettle = atoi(argv[++i]);
         else if (s == "--xlink") a.xlink = 1;
         else if (s == "--box" && i + 3 < argc) {
             a.box.x = (float)atof(argv[++i]);
@@ -203,7 +213,6 @@ int main(int argc, char** argv) {
     ImGui_ImplOpenGL3_Init("#version 460");
 
     AtomTemplate tmpl = loadAtoms(resolveAsset("assets/atoms.bin"));
-    Profiles prof = loadProfiles(resolveAsset("assets/profiles.bin"));
     Profiles2D prof2 = loadProfiles2D(resolveAsset("assets/profiles2d.bin"));
     Basis2D basis = loadBasis2D(resolveAsset("assets/profiles2d_basis.bin"));
     Profiles2D prof2A;
@@ -230,73 +239,6 @@ int main(int argc, char** argv) {
            tmpl.natoms, tmpl.lengthNm, tmpl.dPeriodNm, prof2.nD, prof2.nPhi, prof2.nPhi);
 
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--mclinks" && i + 1 < argc)
-            g_mcd.p.nLinks = atoi(argv[i + 1]);
-        if (std::string(argv[i]) == "--mcbend" && i + 1 < argc)
-            g_mcd.p.bendOn = (float)atof(argv[i + 1]);
-        if (std::string(argv[i]) == "--mcnmol" && i + 1 < argc)
-            g_mcdTestN = atoi(argv[i + 1]);
-        if (std::string(argv[i]) == "--mcsweeps" && i + 1 < argc)
-            g_mcdTestSweeps = atoi(argv[i + 1]);
-        if (std::string(argv[i]) == "--mcnodock") g_mcd.p.dockMoves = false;
-        if (std::string(argv[i]) == "--mcanneal") g_mcdAnneal = true;
-        if (std::string(argv[i]) == "--mcdocktest") {
-            g_mcd.buildPoseLibrary(basis, prof2.par, 7.4f, 2.5f, 1.0f,
-                                   haveCorr ? &corrTab : nullptr);
-            float bxy = g_mcdTestN <= 8 ? 20.f : 120.f;   // tight box for pair tests
-            g_mcd.initFromScatter(g_mcdTestN, {bxy, bxy, 210}, tmpl.lengthNm, true, 1234);
-            printf("links %d (%.0f nm), bend x%.2f -> Lp %.0f nm, N %d\n",
-                   g_mcd.p.nLinks, g_mcd.linkLen, g_mcd.p.bendOn,
-                   g_mcd.p.bendOn * g_mcd.persistLen, g_mcdTestN);
-            double t0 = glfwGetTime();
-            int nrep = std::max(1, g_mcdTestSweeps / 100);
-            for (int rep = 0; rep < nrep; ++rep) {
-                if (g_mcdAnneal && nrep > 1)   // simulated anneal 3 kT -> 1 kT
-                    g_mcd.p.tempFactor = 1.f + 2.f * (1.f - float(rep) / (nrep - 1));
-                g_mcd.sweep(100);
-                float ms = 0;
-                int nc = g_mcd.clusterCount(ms);
-                printf("sweep %5lld | t=%.3f ms | bound %.0f%% | clusters %d (%.1f) | "
-                       "band %.2f Dfrac %.0f%% | acc %.1f%% (T%.1f D%.1f S%.1f P%.1f)\n",
-                       (long long)g_mcd.sweepsDone, g_mcd.simTimeNs * 1e-6,
-                       g_mcd.boundFraction() * 100.f, nc, ms, g_mcd.bandCoherence(),
-                       g_mcd.dFraction() * 100.f,
-                       g_mcd.proposed ? 100.0 * g_mcd.accepted / g_mcd.proposed : 0.0,
-                       100.0 * g_mcd.accWhole / std::max(1.0, (double)g_mcd.proposed),
-                       100.0 * g_mcd.accDock / std::max(1.0, (double)g_mcd.proposed),
-                       100.0 * g_mcd.accSlide / std::max(1.0, (double)g_mcd.proposed),
-                       100.0 * g_mcd.accPivot / std::max(1.0, (double)g_mcd.proposed));
-            }
-            double el = glfwGetTime() - t0;
-            if (g_mcdTestN <= 8) g_mcd.dumpContacts(40);
-            {   // render path: bond spacing must hold and chains must bend
-                std::vector<glm::vec4> bt;
-                const int nb = 96;
-                float sl = tmpl.lengthNm / (nb - 1);
-                g_mcd.writeBeads(bt, nb, sl);
-                float maxDev = 0, sumR = 0;
-                int nm = std::min((int)g_mcd.mols.size(), 50);
-                for (int m = 0; m < nm; ++m) {
-                    for (int i = 0; i + 1 < nb; ++i) {
-                        glm::vec3 a(bt[m * nb + i]), b(bt[m * nb + i + 1]);
-                        maxDev = std::max(maxDev, fabsf(glm::length(b - a) - sl));
-                    }
-                    glm::vec3 e0(bt[m * nb]), e1(bt[m * nb + nb - 1]);
-                    sumR += glm::length(e1 - e0);
-                }
-                printf("beads: max bond deviation %.4f nm | <Ree>/L %.2f (WLC ~0.57 free)\n",
-                       maxDev, sumR / nm / tmpl.lengthNm);
-            }
-            double nsw = nrep * 100.0;
-            printf("clock: %.2f us/sweep calibrated on %d free mols (MSD %.3f nm^2), "
-                   "uncorrected sigma^2/6D would say %.1f us%s\n",
-                   g_mcd.stepTimeNs * 1e-3, g_mcd.lastFreeCount, g_mcd.lastMsdFree,
-                   g_mcd.stepTimeNominalNs * 1e-3,
-                   g_mcd.clockExtrapolated ? " [EXTRAPOLATED]" : "");
-            printf("%.0f sweeps in %.1f s = %.0f sweeps/s -> %.3g sim-seconds per wall-hour\n",
-                   nsw, el, nsw / el, nsw / el * g_mcd.stepTimeNs * 1e-9 * 3600.0);
-            return 0;
-        }
         if (std::string(argv[i]) == "--wetest") g_weTest = true;
         if (std::string(argv[i]) == "--wenmol" && i + 1 < argc) g_weNmol = atoi(argv[i + 1]);
         if (std::string(argv[i]) == "--wetarget" && i + 1 < argc) g_weTarget = atoi(argv[i + 1]);
@@ -307,43 +249,6 @@ int main(int argc, char** argv) {
             g_weBruteSteps = atoi(argv[i + 1]);
         if (std::string(argv[i]) == "--wewalkers" && i + 1 < argc)
             g_weWalkers = atoi(argv[i + 1]);
-        if (std::string(argv[i]) == "--kmctest") {
-            KmcParams kp;
-            const Corr2D* ctt = haveCorr ? &corrTab : nullptr;
-            KmcProfile prT = kmcProfile1D(basis, prof2.par, 7.4f, 2.5f, 1.0f, ctt);
-            KmcProfile prAcid = kmcProfile1D(basis, prof2.par, 3.5f, 2.5f, 1.0f, ctt);
-            for (double c : {0.3, 1.0, 3.0}) {
-                KmcResult r = kmcRun(kp, prT, prT, c, 284.7, 37.0, 7);
-                printf("telo %.1f mg/mL 37C: lag %5.1f min, t50 %5.1f, plateau %3.0f%%, "
-                       "band order %.2f\n",
-                       c, r.lagMin, r.t50Min, r.plateau * 100, r.finalOrder);
-            }
-            KmcParams slow = kp; slow.kplus = 5e4;   // slow growth: anneal better
-            KmcResult rs = kmcRun(slow, prT, prT, 1.0, 284.7, 37.0, 7);
-            printf("slow growth (k+ /10): lag %5.1f, band order %.2f\n",
-                   rs.lagMin, rs.finalOrder);
-            KmcParams narrow = kp; narrow.scanWinNm = 3.0;
-            KmcResult rn = kmcRun(narrow, prT, prT, 1.0, 284.7, 37.0, 7);
-            printf("narrow scan (3 nm):  lag %5.1f, band order %.2f\n",
-                   rn.lagMin, rn.finalOrder);
-            KmcParams wide = kp; wide.scanWinNm = 70.0;
-            KmcResult rw = kmcRun(wide, prT, prT, 1.0, 284.7, 37.0, 7);
-            printf("wide scan (70 nm):   lag %5.1f, band order %.2f\n",
-                   rw.lagMin, rw.finalOrder);
-            KmcResult rp = kmcRun(kp, prAcid, prT, 1.0, 284.7, 37.0, 7);
-            printf("telo pH3.5 37C: lag %.1f min, plateau %.0f%%\n",
-                   rp.lagMin, rp.plateau * 100);
-            KmcProfile prF = kmcProfileFunnel(prof, 2.5f, 1.0f,
-                                              tmpl.dPeriodNm, tmpl.lengthNm);
-            KmcResult rf = kmcRun(kp, prF, prF, 1.0, 284.7, 37.0, 7);
-            printf("funnel (dock-and-lock) 1.0 mg/mL: lag %5.1f, band order %.2f\n",
-                   rf.lagMin, rf.finalOrder);
-            KmcParams slowF = kp; slowF.kplus = 5e4;
-            KmcResult rf2 = kmcRun(slowF, prF, prF, 1.0, 284.7, 37.0, 7);
-            printf("funnel slow growth:               lag %5.1f, band order %.2f\n",
-                   rf2.lagMin, rf2.finalOrder);
-            return 0;
-        }
     }
 
     Sim sim;
@@ -356,9 +261,8 @@ int main(int argc, char** argv) {
     if (args.epsHy >= 0) sim.p.epsHy = args.epsHy;
     if (args.epsNs >= 0) sim.p.epsNs = args.epsNs;
     if (args.box.x > 0) sim.p.boxHalf = args.box;
-    if (args.registry >= 0) sim.p.registryMode = args.registry;
     if (args.pbc) sim.p.pbc = 1;
-    if (args.mc) sim.p.mcBoost = 1;
+    if (args.engine) sim.p.engine = args.engine;
     if (args.xlink) sim.p.xlink = 1;
     if (args.pH > 0) sim.p.pH = args.pH;
     if (args.temp > -900) sim.p.tempC = args.temp;
@@ -366,8 +270,406 @@ int main(int argc, char** argv) {
         if (args.fibRad > 0) sim.p.fibrilRad = args.fibRad;
         if (args.fibLen > 0) sim.p.fibrilLenUm = args.fibLen;
     }
-    sim.init(tmpl, prof, prof2, basis, haveAtelo ? &prof2A : nullptr,
+    sim.init(tmpl, prof2, basis, haveAtelo ? &prof2A : nullptr,
              haveAtelo ? &basisA : nullptr, haveCorr ? &corrTab : nullptr);
+
+    // --------------------------------------------------------------------
+    // --gradtest: is the rigorous engine's drift the gradient of its U?
+    //
+    // Differentiate U numerically along random directions and compare with
+    // -F.dir. This is a DIAGNOSTIC, not a pass/fail gate: Metropolis-Hastings
+    // needs an exact, evaluable U but tolerates an approximate drift, which
+    // only costs acceptance rate. What the number tells us is how much
+    // acceptance we are giving away, and it localises which term is off.
+    // --------------------------------------------------------------------
+    if (g_gradTest) {
+        sim.p.engine = 1;
+        sim.p.nMol = g_gradNmol;
+        sim.p.boxHalf = {40.f, 40.f, 180.f};
+        sim.p.pbc = 1;
+        sim.p.scenario = 0;
+        sim.restart();
+        printf("gradtest: %d molecules, %d beads, dtRig %.4f ns, kBond %.0f kT/nm^2 "
+               "(rms strain %.1f%% of a = %.3f nm)\n",
+               sim.p.nMol, sim.nBead(), sim.p.dtRig, sim.kBond(),
+               sim.p.bondStrain * 100.f, sim.segLen);
+        sim.step(g_gradSettle);            // settle into real contacts
+        sim.burnin = 0;                    // measure the unramped U only
+
+        const int nB = sim.nBead();
+        std::vector<glm::vec4> x0(nB), xp(nB);
+        std::vector<glm::vec4> F(nB);
+        glGetNamedBufferSubData(sim.posBuf, 0, sizeof(glm::vec4) * nB, x0.data());
+
+        double u0 = sim.computeU(sim.posBuf);
+        sim.driftAt(sim.posBuf);
+        glGetNamedBufferSubData(sim.beadFBuf, 0, sizeof(glm::vec4) * nB, F.data());
+        printf("  U = %.4f kT total, %.5f kT/bead | <|F|> ", u0, u0 / nB);
+        {
+            double fs = 0;
+            for (int i = 0; i < nB; ++i) fs += glm::length(glm::vec3(F[i]));
+            printf("%.4f kT/nm\n", fs / nB);
+        }
+
+        // scratch buffer so the base positions are never disturbed
+        GLuint probe = 0;
+        glCreateBuffers(1, &probe);
+        glNamedBufferData(probe, sizeof(glm::vec4) * nB, x0.data(), GL_DYNAMIC_DRAW);
+
+        // Two models over the SAME configuration. Turning the registry off
+        // leaves only terms whose gradients are written analytically (bonds,
+        // bending, soft core, walls); whatever error survives there is a bug,
+        // and whatever appears only in the full model is the price of the
+        // omitted d(facing angle)/dx and d(gate)/dx terms.
+        const int nTrial = 48;
+        struct Case { const char* name; bool registry; };
+        for (Case cs : {Case{"bonded + steric only", false}, Case{"full model", true}}) {
+            float sEl = sim.p.epsEl, sHy = sim.p.epsHy, sNs = sim.p.epsNs;
+            float sCo = sim.p.epsCorr, sDe = sim.p.epsDep;
+            if (!cs.registry) {
+                sim.p.epsEl = sim.p.epsHy = sim.p.epsNs = 0.f;
+                sim.p.epsCorr = sim.p.epsDep = 0.f;
+            }
+            sim.computeU(sim.posBuf);
+            sim.driftAt(sim.posBuf);
+            glGetNamedBufferSubData(sim.beadFBuf, 0, sizeof(glm::vec4) * nB, F.data());
+            double meanF = 0;
+            for (int i = 0; i < nB; ++i) meanF += glm::length(glm::vec3(F[i]));
+            meanF /= nB;
+            printf("\n  [%s]  U = %.3f kT, <|F|> = %.3f kT/nm\n",
+                   cs.name, sim.lastU, meanF);
+            // Errors are ABSOLUTE (kT/nm). Normalising per bead is misleading:
+            // a bead near force balance has |F| ~ 0 and reports a huge relative
+            // error for an utterly negligible absolute one.
+            printf("  %-9s %11s %11s %11s %11s %8s\n", "eps(nm)", "FD dU/ds",
+                   "-F.dir", "med |err|", "p95 |err|", "med/<|F|>");
+            for (float eps : {3e-2f, 1e-2f, 3e-3f, 1e-3f}) {
+                // ONE bead at a time. A direction spread over all 3N
+                // coordinates displaces each bead by only eps/sqrt(3N) ~ 2 ulp
+                // of a float32 coordinate at 40 nm, so the finite difference
+                // measures rounding rather than physics. Moving a single bead
+                // by the full eps also makes every untouched energy element
+                // bitwise identical between the two evaluations, so they cancel
+                // exactly in the double reduction.
+                std::mt19937 rg(20260811u);          // same probes every eps
+                std::normal_distribution<float> nd(0.f, 1.f);
+                std::vector<double> rels;
+                double fd0 = 0, an0 = 0;
+                for (int t = 0; t < nTrial; ++t) {
+                    int b = (int)(rg() % (unsigned)nB);
+                    glm::vec3 dir(nd(rg), nd(rg), nd(rg));
+                    dir = glm::normalize(dir);
+                    double uPM[2] = {0, 0};
+                    for (int s = 0; s < 2; ++s) {
+                        glm::vec4 xb = x0[b] + glm::vec4(dir * (s == 0 ? -eps : eps), 0.f);
+                        glNamedBufferSubData(probe, sizeof(glm::vec4) * b,
+                                             sizeof(glm::vec4), &xb);
+                        uPM[s] = sim.computeU(probe);
+                    }
+                    glNamedBufferSubData(probe, sizeof(glm::vec4) * b,
+                                         sizeof(glm::vec4), &x0[b]);
+                    double fd = (uPM[1] - uPM[0]) / (2.0 * eps);
+                    double an = -glm::dot(glm::vec3(F[b]), dir);
+                    rels.push_back(fabs(fd - an));       // kT/nm
+                    if (t == 0) { fd0 = fd; an0 = an; }
+                }
+                std::sort(rels.begin(), rels.end());
+                double med = rels[rels.size() / 2];
+                double p95 = rels[(size_t)(rels.size() * 0.95)];
+                printf("  %-9.0e %11.5f %11.5f %11.2e %11.2e %7.3f%%\n",
+                       eps, fd0, an0, med, p95, 100.0 * med / meanF);
+            }
+            sim.p.epsEl = sEl; sim.p.epsHy = sHy; sim.p.epsNs = sNs;
+            sim.p.epsCorr = sCo; sim.p.epsDep = sDe;
+        }
+        glDeleteBuffers(1, &probe);
+        printf("\n  Reading: error that shrinks with eps is finite-difference\n"
+               "  truncation. Error that plateaus is a real inconsistency\n"
+               "  between U and the drift. The drift omits d(facing angle)/dx\n"
+               "  and d(alignment gate)/dx, and does not differentiate the\n"
+               "  parallel-transport frames at all -- that omission costs MALA\n"
+               "  acceptance, not correctness, since Metropolis-Hastings needs\n"
+               "  an exact U but tolerates an approximate proposal drift.\n");
+        return 0;
+    }
+
+    // --------------------------------------------------------------------
+    // --dtscan: the certificate. Metropolis makes the sampled distribution
+    // exactly exp(-U/kT) at ANY dt, so this is not an accuracy curve -- it is
+    // a KINETICS curve. Every rejection freezes the system for a step, which
+    // real Brownian motion never does, so the trajectory is only interpretable
+    // as dynamics while acceptance is near 1. This finds where that stops.
+    // --------------------------------------------------------------------
+    if (g_dtScan) {
+        sim.p.engine = 1;
+        sim.p.mala = 1;
+        sim.p.nMol = g_gradNmol;
+        sim.p.boxHalf = {40.f, 40.f, 180.f};
+        sim.p.pbc = 1;
+        sim.p.scenario = args.scenario ? args.scenario : 0;
+        sim.restart();
+        printf("dtscan: %d molecules (%d beads, %d DOF), kBond %.0f kT/nm^2, "
+               "tau_bond = gamma/k = %.4f ns\n",
+               sim.p.nMol, sim.nBead(), 3 * sim.nBead() + sim.p.nMol,
+               sim.kBond(), sim.p.gamma / sim.kBond());
+        // Equilibrate with MALA OFF. Settling with it on is circular: if the
+        // chosen dt happens to reject everything, the "equilibrated" snapshot
+        // is just the cold straight-rod start, and the scan then measures how
+        // hard it is to thermalise rather than the acceptance at equilibrium.
+        // U has to plateau before any of these numbers mean anything -- the
+        // slowest local mode is bending, tau = gamma/(kBend/a^2) ~ 3.3 ns.
+        sim.p.mala = 0;
+        sim.p.dtRig = 0.005f;
+        printf("  equilibrating (unadjusted, dt %.3f ns):", sim.p.dtRig);
+        for (int w = 0; w < 6; ++w) {
+            sim.step(g_gradSettle);
+            sim.burnin = 0;
+            printf(" %.0f", sim.computeU());
+            fflush(stdout);
+        }
+        printf("  kT  (%.1f ns simulated)\n", 6.0 * g_gradSettle * sim.p.dtRig);
+        SimState eq;
+        sim.snapshot(eq);
+
+        // Three nested models over the same configuration. Bonds alone are a
+        // near-exact Gaussian target, for which MALA's acceptance is known in
+        // closed form -- so that row is a machinery check, not a measurement.
+        // Whatever only appears in the richer rows is a property of the
+        // potential, not of the sampler.
+        struct MCase { const char* name; bool bendCore; bool registry; };
+        float sEl = sim.p.epsEl, sHy = sim.p.epsHy, sNs = sim.p.epsNs;
+        float sCo = sim.p.epsCorr, sDe = sim.p.epsDep;
+        float sRep = sim.p.kRep, sLp = sim.p.persistLen, sWall = sim.p.kWall;
+        int nBonds = sim.p.nMol * (sim.p.nBeads - 1);
+        for (MCase mc : {MCase{"bonds only (analytic reference)", false, false},
+                         MCase{"+ bending + soft core", true, false},
+                         MCase{"+ registry tables (full)", true, true}}) {
+            sim.restore(eq);
+            sim.p.epsEl = mc.registry ? sEl : 0.f;
+            sim.p.epsHy = mc.registry ? sHy : 0.f;
+            sim.p.epsNs = mc.registry ? sNs : 0.f;
+            sim.p.epsCorr = mc.registry ? sCo : 0.f;
+            sim.p.epsDep = mc.registry ? sDe : 0.f;
+            sim.p.kRep = mc.bendCore ? sRep : 0.f;
+            sim.p.persistLen = mc.bendCore ? sLp : 1e-6f;
+            sim.p.kWall = mc.bendCore ? sWall : 0.f;
+            sim.p.mala = 0;
+            sim.p.dtRig = 0.005f;
+            sim.step(g_gradSettle);          // re-equilibrate under THIS U
+            sim.burnin = 0;
+            sim.p.mala = 1;
+            SimState eqc;
+            sim.snapshot(eqc);
+            printf("\n  [%s]  U = %.1f kT\n", mc.name, sim.computeU());
+            printf("  %-10s %-8s %10s %10s %13s %s\n", "dtRig(ns)", "dt/tau",
+                   "accept", "predicted", "ns per wall-s", "verdict");
+        for (float dt : {0.0005f, 0.001f, 0.002f, 0.005f, 0.01f, 0.02f, 0.05f}) {
+            sim.restore(eqc);
+            sim.p.dtRig = dt;
+            sim.malaTries = sim.malaAccepted = 0;
+            glClearNamedBufferData(sim.totalBuf, GL_R32UI, GL_RED_INTEGER,
+                                   GL_UNSIGNED_INT, nullptr);
+            int nst = 400;
+            double t0 = glfwGetTime();
+            sim.step(nst);
+            double el = glfwGetTime() - t0;
+            double acc = sim.malaAccept;
+            const char* verdict = acc >= 0.99 ? "dynamics OK"
+                                : acc >= 0.90 ? "sampling OK, kinetics suspect"
+                                : acc >= 0.50 ? "sampler only"
+                                              : "frozen";
+            // Gaussian-target prediction. Per stiff mode the MALA log-ratio has
+            // variance 0.5*a_m^3 with a_m = k_m*dt/gamma. The modes of a
+            // bead-spring CHAIN are k_m = 2k(1 - cos q), q in [0,pi] -- so the
+            // stiffest is 4k, not k, and <(2-2cos q)^3> = 20 over the band.
+            // Using the bare spring constant here (as the naive estimate does)
+            // understates the variance by 20x and overstates acceptance badly.
+            double a = dt / (sim.p.gamma / sim.kBond());
+            double sg = sqrt(10.0 * nBonds) * pow(a, 1.5);
+            double pred = erfc(sg / (2.0 * 1.41421356));
+            printf("  %-10.4f %-8.3f %9.3f %10.3f %13.1f  %s\n",
+                   dt, a, acc, pred, nst * dt / el, verdict);
+            if (g_malaProbe) {
+                double t[8];
+                glGetNamedBufferSubData(sim.totalBuf, 0, 64, t);
+                double D = 4.0 * sim.p.kT * dt / sim.p.gamma;
+                double Dr = 4.0 * sim.p.kT * dt / sim.p.gammaRot;
+                printf("       U %.4f -> %.4f  (dU %+.4f)\n", t[0], t[3], t[3] - t[0]);
+                printf("       pos: fwd %.6f rev %.6f  d/(4Ddt) %+.4f\n",
+                       t[1], t[4], (t[1] - t[4]) / D);
+                printf("       th : fwd %.3e rev %.3e  d/(4Ddt) %+.4f\n",
+                       t[2], t[5], (t[2] - t[5]) / Dr);
+                printf("       log a = %+.4f\n",
+                       -(t[3] - t[0]) / sim.p.kT + (t[1] - t[4]) / D + (t[2] - t[5]) / Dr);
+            }
+        }
+        }
+        sim.p.epsEl = sEl; sim.p.epsHy = sHy; sim.p.epsNs = sNs;
+        sim.p.epsCorr = sCo; sim.p.epsDep = sDe;
+        sim.p.kRep = sRep; sim.p.persistLen = sLp; sim.p.kWall = sWall;
+        printf("\n  Acceptance is the falsifiable answer to \"is my timestep\n"
+               "  honest?\" -- a question the fast engine cannot answer at all.\n"
+               "  Row 1 should track its prediction; if it does, the sampler is\n"
+               "  sound and any shortfall below is the potential's own doing.\n");
+        return 0;
+    }
+
+    // --------------------------------------------------------------------
+    // --equipart: does each engine sample the distribution it claims to?
+    //
+    // With pair interactions off, U = bonds + bending only, and in bond-vector
+    // coordinates (l_i, direction_i) the Jacobian is prod l_i^2, so both terms
+    // separate and have closed-form equilibria:
+    //
+    //   p(l)      ~ l^2 exp(-k(l-a)^2 / 2kT)   =>  <l> = a + 2 sigma^2 / a
+    //   p(cos t)  ~ exp(-kappa (1 - cos t))    =>  <cos t> = coth k - 1/k
+    //
+    // The second is the Langevin function and depends on NOTHING but kappa =
+    // kBend/kT. Any engine that samples exp(-U/kT) must reproduce it; an engine
+    // that clamps, projects or truncates need not, and cannot say by how much.
+    // --------------------------------------------------------------------
+    if (g_equipart) {
+        // The decisive comparison is the dt pair at the bottom. MALA samples
+        // exp(-U/kT) at ANY dt, so its answer MUST be dt-independent; the
+        // unadjusted propagator's must not be. If MALA drifts with dt it is not
+        // correcting; if it holds steady but misses the analytic value, then
+        // the analytic value is what is wrong.
+        struct ECase { const char* name; int engine; int mala; float dt; };
+        const int nm = g_gradNmol > 0 ? g_gradNmol : 8;
+        double simNs = g_equipNs;
+        printf("equipart: %d molecules, pair interactions OFF, %.0f ns sampled "
+               "per engine\n", nm, simNs);
+        // Shared starting state. restart() lays molecules down as straight
+        // rods, and bending relaxes slowly, so every engine would otherwise
+        // spend its whole budget crawling away from cos t = 1 and the answer
+        // would be an equilibration artefact. Tab 1 covers 60x more simulated
+        // time per step, so it does the pre-relaxation; each engine then only
+        // has to travel the short distance from tab 1's equilibrium to its own.
+        sim.p.nMol = nm;
+        sim.p.boxHalf = {60.f, 60.f, 200.f};
+        sim.p.pbc = 1;
+        sim.p.scenario = 0;
+        sim.p.epsEl = sim.p.epsHy = sim.p.epsNs = 0.f;
+        sim.p.epsCorr = sim.p.epsDep = 0.f;
+        sim.p.kRep = 0.f;
+        sim.p.engine = 0;
+        sim.restart();
+        sim.burnin = 0;
+        sim.step((int)(20000.0 / (sim.p.dt * sim.p.speed)));   // 20 us, cheap
+        SimState start;
+        sim.snapshot(start);
+
+        bool first = true;
+        float dt0 = sim.p.dtRig;
+        // MALA must be run where it actually MOVES. Its nominal simulated time
+        // is not a comparable budget: a rejected step advances the clock while
+        // the system stays put, so a low-acceptance run reports thousands of
+        // nanoseconds having explored almost nothing. The acceptance column
+        // below says whether a row is worth reading.
+        for (ECase ec : {ECase{"tab 1  fast (EM + XPBD + clamps)", 0, 0, 0.f},
+                         ECase{"tab 2  unadjusted   dt 1e-3", 1, 0, 1e-3f},
+                         ECase{"tab 2  + MALA       dt 1e-3", 1, 1, 1e-3f},
+                         ECase{"tab 3  constrained  dt 2e-2", 2, 0, 0.f}}) {
+            sim.restore(start);
+            sim.p.engine = ec.engine;
+            sim.p.mala = ec.mala;
+            if (ec.dt > 0) sim.p.dtRig = ec.dt; else sim.p.dtRig = dt0;
+
+            double dtEff = ec.engine == 2 ? sim.p.dtCon
+                         : ec.engine == 1 ? sim.p.dtRig
+                                          : sim.p.dt * sim.p.speed;
+            int totSteps = (int)(simNs / dtEff);
+            int nSnap = 100;
+            int per = std::max(1, totSteps / nSnap);
+            sim.step(totSteps / 4);                          // settle into THIS engine
+
+            if (first) {
+                double kb = sim.kBond(), a = sim.segLen;
+                double sg = sqrt(1.0 / kb);
+                double kap = sim.p.persistLen / sim.segLen;
+                printf("  kBond %.0f kT/nm^2, a %.4f nm, kappa = Lp/a = %.3f\n", kb, a, kap);
+                printf("  EXACT: <l> %.5f  sd(l) %.5f  <cos t> %.5f  -> Lp %.2f nm\n\n",
+                       a + 2 * sg * sg / a, sg,
+                       1.0 / tanh(kap) - 1.0 / kap,
+                       -a / log(1.0 / tanh(kap) - 1.0 / kap));
+                printf("  %-34s %9s %9s %10s %8s %7s %7s\n", "engine",
+                       "<l>", "sd(l)", "<cos t>", "Lp(nm)", "clamp", "accept");
+                first = false;
+            }
+
+            std::vector<float> buf(size_t(sim.nBead()) * 4);
+            double sl = 0, sl2 = 0, sc = 0;
+            long long nl = 0, nc = 0;
+            // running <cos t> per quarter: if it is still drifting the number
+            // below is an equilibration artefact, not a property of the engine
+            double qc[4] = {0, 0, 0, 0};
+            long long qn[4] = {0, 0, 0, 0};
+            for (int s = 0; s < nSnap; ++s) {
+                int q = std::min(3, s * 4 / nSnap);
+                double scPrev = sc;
+                long long ncPrev = nc;
+                sim.step(per);
+                glGetNamedBufferSubData(sim.posBuf, 0, sizeof(float) * buf.size(),
+                                        buf.data());
+                int M = sim.p.nBeads;
+                for (int m = 0; m < sim.p.nMol; ++m) {
+                    for (int i = 0; i + 1 < M; ++i) {
+                        const float* p0 = &buf[(size_t(m) * M + i) * 4];
+                        const float* p1 = &buf[(size_t(m) * M + i + 1) * 4];
+                        glm::vec3 d(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+                        double L = glm::length(d);
+                        sl += L; sl2 += L * L; nl++;
+                        if (i + 2 < M) {
+                            const float* p2 = &buf[(size_t(m) * M + i + 2) * 4];
+                            glm::vec3 e(p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]);
+                            double le = glm::length(e);
+                            if (L > 1e-9 && le > 1e-9) {
+                                sc += glm::dot(d, e) / (L * le);
+                                nc++;
+                            }
+                        }
+                    }
+                }
+                qc[q] += sc - scPrev;
+                qn[q] += nc - ncPrev;
+            }
+            double ml = sl / nl, vl = sl2 / nl - ml * ml;
+            double mc = sc / nc;
+            double lp = mc > 0 && mc < 1 ? -sim.segLen / log(mc) : 0.0;
+            // Clamp telemetry. The force pass clears stats every 16 steps, so a
+            // single read is one 16-step window and swings wildly (13-74% in
+            // practice). Average over many windows or the number is noise.
+            char clamp[16] = "   -";
+            if (ec.engine == 0) {
+                // MUST align to the clear boundary first. The force pass zeroes
+                // stats when totalSteps % 16 == 0; starting off-phase counts
+                // fewer than 16 steps of accumulation while still dividing by
+                // 16, and since stepping 16 preserves the phase, averaging does
+                // not wash it out -- it just repeats the same wrong window.
+                while (sim.totalSteps % 16 != 0) sim.step(1);
+                double acc2 = 0;
+                const int nWin = 40;
+                for (int w = 0; w < nWin; ++w) {
+                    sim.step(16);
+                    sim.readStats();
+                    acc2 += sim.stats[4] / (16.0 * sim.nBead());
+                }
+                snprintf(clamp, sizeof clamp, "%5.1f%%", 100.0 * acc2 / nWin);
+            }
+            char accs[16] = "   -";
+            if (ec.mala) snprintf(accs, sizeof accs, "%6.3f", sim.malaAccept);
+            printf("  %-34s %9.5f %9.5f %10.5f %8.2f %7s %7s\n",
+                   ec.name, ml, sqrt(std::max(0.0, vl)), mc, lp, clamp, accs);
+            printf("  %-34s <cos t> by quarter: %.5f %.5f %.5f %.5f\n", "",
+                   qn[0] ? qc[0] / qn[0] : 0, qn[1] ? qc[1] / qn[1] : 0,
+                   qn[2] ? qc[2] / qn[2] : 0, qn[3] ? qc[3] / qn[3] : 0);
+        }
+        printf("\n  sd(l) ~ 0 for tab 1 is XPBD holding the bond rigid -- a\n"
+               "  different model, not an error. <cos t> is the shared test:\n"
+               "  both engines have the same kBend and must give the same answer.\n");
+        return 0;
+    }
+
     if (g_weTest) {
             WeParams wp;
             wp.targetSize = g_weTarget;
@@ -377,7 +679,6 @@ int main(int argc, char** argv) {
             sim.p.boxHalf = {60.f, 60.f, 200.f};
             sim.p.pbc = 1;
             sim.p.scenario = 0;
-            sim.p.registryMode = 2;
             sim.restart();
             double volNm3 = 8.0 * 60.0 * 60.0 * 200.0;
             // g per molecule -> g/mL over the box volume -> mg/mL
@@ -515,7 +816,6 @@ int main(int argc, char** argv) {
         double t0 = glfwGetTime();
         for (int f = 0; f <= frames; ++f) {
             sim.step(steps);
-            if (sim.p.mcBoost) sim.mcPass(sim.p.mcPasses);
             if (f % args.every == 0) {
                 glGetNamedBufferSubData(sim.posBuf, 0, sizeof(float) * buf.size(), buf.data());
                 int M = sim.p.nBeads;
@@ -534,7 +834,15 @@ int main(int argc, char** argv) {
                     printf("| dz %7.2f dperp %5.2f ", dz, dperp);
                 }
                 sim.readStats();
-                printf("| ov %u\n", sim.stats[0] / 2);
+                printf("| ov %u", sim.stats[0] / 2);
+                if (sim.p.engine == 1) {
+                    // evaluate first: argument order is unspecified, so
+                    // passing computeU() and lastU together reads a stale U
+                    double u = sim.computeU();
+                    printf(" | U %.1f kT (%.4f/bead)", u, u / sim.nBead());
+                    if (sim.p.mala) printf(" | acc %.3f", sim.malaAccept);
+                }
+                printf("\n");
                 fflush(stdout);
             }
         }
@@ -557,20 +865,14 @@ int main(int argc, char** argv) {
         double frameStart = glfwGetTime();
         glfwPollEvents();
 
-        if (running && g_appMode == 0) sim.step(stepsPerFrame);
+        // both BD tabs drive the same Sim; the tab only selects the propagator
+        if (running && (g_appMode == 0 || g_appMode == 1)) sim.step(stepsPerFrame);
         if (running && g_appMode == 3 && g_weActive && !g_we.walkers.empty()) {
             g_we.advanceWalker(sim, g_weIdx);
             if (++g_weIdx >= (int)g_we.walkers.size()) {
                 g_we.finishIteration(sim);
                 g_weIdx = 0;
             }
-        }
-        if (running && g_appMode == 1 && g_mcd.mols.size() == (size_t)sim.p.nMol) {
-            g_mcd.sweep(g_mcdSweeps);
-            static std::vector<glm::vec4> beadTmp;
-            g_mcd.writeBeads(beadTmp, sim.p.nBeads, sim.segLen);
-            glNamedBufferSubData(sim.posBuf, 0, sizeof(glm::vec4) * beadTmp.size(),
-                                 beadTmp.data());
         }
         sim.smoothForDisplay(smoothAlpha, frameIdx == 0);
         sim.computeFrames(sim.renderPosBuf);
@@ -633,18 +935,80 @@ int main(int argc, char** argv) {
         ImGui::TextDisabled("type I fibrillogenesis");
         ImGui::Separator();
 
-        static KmcParams kmcP;
-        static KmcResult kmcR, kmcRef;
-        static bool kmcDirty = true, kmcHaveRef = false;
-        static float kmcConc = 1.0f;
-        static int kmcSeed = 7;
         int& appMode = g_appMode;
         if (ImGui::BeginTabBar("mode")) {
-            if (ImGui::BeginTabItem("BD (Langevin)")) { appMode = 0; ImGui::EndTabItem(); }
-            if (ImGui::BeginTabItem("MC (docking)")) { appMode = 1; ImGui::EndTabItem(); }
-            if (ImGui::BeginTabItem("KMC (kinetics)")) { appMode = 2; ImGui::EndTabItem(); }
-            if (ImGui::BeginTabItem("WE (rare events)")) { appMode = 3; ImGui::EndTabItem(); }
+            if (ImGui::BeginTabItem("BD - fast")) { appMode = 0; ImGui::EndTabItem(); }
+            if (ImGui::BeginTabItem("BD - rigorous")) { appMode = 1; ImGui::EndTabItem(); }
+            if (ImGui::BeginTabItem("BD - constrained")) { appMode = 2; ImGui::EndTabItem(); }
+            if (g_advanced && ImGui::BeginTabItem("WE (rare events)")) {
+                appMode = 3;
+                ImGui::EndTabItem();
+            }
             ImGui::EndTabBar();
+        }
+        // the tab IS the engine: same Sim, same state, different propagator
+        sim.p.engine = (appMode == 1) ? 1 : (appMode == 2) ? 2 : 0;
+        if (appMode == 2) {
+            ImGui::TextWrapped("Bonds are rigid holonomic constraints (SHAKE), not "
+                               "springs. That removes the stiffest mode from the "
+                               "spectrum, so dt can be ~10x larger than the rigorous "
+                               "tab -- and it is the more faithful limit: collagen's "
+                               "real axial stiffness is ~675 kT/nm^2, stiffer than any "
+                               "spring we would dare integrate.");
+            ImGui::TextColored({1.f, 0.65f, 0.2f, 1.f},
+                               "NOT EXACT YET: no Fixman term and no Metropolis "
+                               "adjustment. Constraining changes the equilibrium "
+                               "measure; --equipart measures by how much.");
+            ImGui::Separator();
+            ImGui::SliderFloat("dt constrained (ns)", &sim.p.dtCon, 0.0005f, 0.2f,
+                               "%.4f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderInt("SHAKE sweeps", &sim.p.shakeIters, 2, 128);
+            ImGui::TextDisabled("  tab 1 uses 4 and does not converge: its 0.052 nm\n"
+                                "  bond spread is residual projection error, not physics.");
+            if (ImGui::Button("measure U")) sim.computeU();
+            ImGui::SameLine();
+            ImGui::Text("U = %.1f kT", sim.lastU);
+            ImGui::Separator();
+        }
+        if (appMode == 1) {
+            ImGui::TextWrapped("Rigorous engine: explicit potential energy U, harmonic "
+                               "bonds, no force or displacement clamps, and a Metropolis "
+                               "accept/reject on every step, so the sampled distribution "
+                               "is exactly exp(-U/kT) rather than whatever the clamps "
+                               "leave behind. Costs roughly 10-100x per nanosecond.");
+            ImGui::Checkbox("Metropolis-adjusted (MALA)", (bool*)&sim.p.mala);
+            if (sim.p.mala) {
+                double a = sim.malaAccept;
+                ImVec4 col = a >= 0.99 ? ImVec4(0.4f, 0.9f, 0.5f, 1.f)
+                           : a >= 0.90 ? ImVec4(0.9f, 0.9f, 0.4f, 1.f)
+                                       : ImVec4(1.f, 0.5f, 0.35f, 1.f);
+                ImGui::TextColored(col, "acceptance %.3f  --  %s", a,
+                    a >= 0.99 ? "dt is honest: rejections rare, still dynamics"
+                  : a >= 0.90 ? "equilibrium exact, kinetics distorted"
+                  : a >= 0.50 ? "sampler only -- do not read rates off this"
+                              : "frozen: lower dt");
+                ImGui::TextDisabled("  Equilibrium is exactly exp(-U/kT) at ANY dt. "
+                                    "Acceptance is about KINETICS: a rejection freezes\n"
+                                    "  the system for a step, which Brownian motion "
+                                    "never does. Falls as N^(-1/3).");
+            } else {
+                ImGui::TextColored({1.f, 0.65f, 0.2f, 1.f},
+                                   "Unadjusted: conservative force field, but the "
+                                   "sampled equilibrium is dt-dependent.");
+            }
+            ImGui::Separator();
+            ImGui::SliderFloat("dt rigorous (ns)", &sim.p.dtRig, 0.00001f, 0.05f,
+                               "%.5f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("bond strain (rms)", &sim.p.bondStrain, 0.005f, 0.1f, "%.3f");
+            ImGui::TextDisabled("  -> kBond %.0f kT/nm^2 (a = %.3f nm). Stability needs "
+                                "dt < 2*gamma/kBond = %.4f ns",
+                                sim.kBond(), sim.segLen, 2.f * sim.p.gamma / sim.kBond());
+            ImGui::Checkbox("Leimkuhler-Matthews noise", (bool*)&sim.p.lmNoise);
+            if (ImGui::Button("measure U")) sim.computeU();
+            ImGui::SameLine();
+            ImGui::Text("U = %.1f kT  (%.4f kT/bead)", sim.lastU,
+                        sim.lastU / std::max(1, sim.nBead()));
+            ImGui::Separator();
         }
         if (appMode == 3) {
             ImGui::TextWrapped("Weighted ensemble over the BD engine. Every walker is "
@@ -716,205 +1080,6 @@ int main(int argc, char** argv) {
             glfwSwapBuffers(win);
             glFinish();
             frameIdx++;
-            continue;
-        }
-        if (appMode == 1) {
-            // docking-based Monte Carlo (Vakser et al., PNAS 2022 adapted to rods)
-            static bool mcdInit = false;
-            static float lastPH = -1, lastEl = -1, lastHy = -1;
-            static int lastAtelo = -1;
-            ImGui::TextWrapped("Segmental docking MC: each molecule is a chain of "
-                               "persistence-length links. Moves are adaptive rigid "
-                               "transport, link-dock hops onto pose-library minima "
-                               "(chain dragged along), and joint pivots; energies are "
-                               "contact integrals of the measured registry kernel, "
-                               "Metropolis with Hastings/Ni-Nj corrections.");
-            if (ImGui::Button(mcdInit ? "reset MC system" : "start MC system") || !mcdInit) {
-                if (sim.p.pH != lastPH || sim.p.epsEl != lastEl || sim.p.epsHy != lastHy ||
-                    sim.p.atelo != lastAtelo || g_mcd.poses.empty()) {
-                    const Basis2D& bAct = (sim.p.atelo && haveAtelo) ? basisA : basis;
-                    const Profiles2D& pAct = (sim.p.atelo && haveAtelo) ? prof2A : prof2;
-                    g_mcd.buildPoseLibrary(bAct, pAct.par, sim.p.pH, sim.p.epsEl,
-                                           sim.p.epsHy, haveCorr ? &corrTab : nullptr,
-                                           sim.p.epsCorr);
-                    lastPH = sim.p.pH; lastEl = sim.p.epsEl; lastHy = sim.p.epsHy;
-                    lastAtelo = sim.p.atelo;
-                }
-                g_mcd.initFromScatter(sim.p.nMol, sim.p.boxHalf, sim.molLen,
-                                      sim.p.pbc == 1, sim.p.seed);
-                mcdInit = true;
-            }
-            if (ImGui::Button(running ? "pause##mcd" : "run##mcd")) running = !running;
-            ImGui::SliderInt("sweeps/frame", &g_mcdSweeps, 1, 40);
-            ImGui::SliderInt("links/molecule", &g_mcd.p.nLinks, 1, 12);
-            ImGui::TextDisabled("link %.0f nm (Lp %.0f nm) - reset to apply",
-                                g_mcd.linkLen, g_mcd.persistLen);
-            ImGui::SliderFloat("hop scale (nm)", &g_mcd.p.sigmaFree, 2.f, 40.f);
-            ImGui::SliderFloat("temperature factor", &g_mcd.p.tempFactor, 0.2f, 4.f);
-            ImGui::SliderFloat("capture radius (nm)", &g_mcd.p.captureR, 3.f, 15.f);
-            ImGui::SliderFloat("pivot amplitude (rad)", &g_mcd.p.pivotAmp, 0.02f, 0.8f);
-            ImGui::SliderFloat("bending stiffness x", &g_mcd.p.bendOn, 0.f, 6.f);
-            ImGui::TextDisabled("  -> effective Lp %.0f nm", g_mcd.p.bendOn * g_mcd.persistLen);
-            ImGui::Checkbox("dock hops (biased basin finding)", &g_mcd.p.dockMoves);
-            if (!g_mcd.p.dockMoves)
-                ImGui::TextDisabled("  strictly reversible chain (transport/slide/pivot)");
-            double tNs = g_mcd.simTimeNs;
-            const char* unit = "ns";
-            double tv = tNs;
-            if (tv > 3.6e12) { tv /= 3.6e12; unit = "h"; }
-            else if (tv > 6e10) { tv /= 6e10; unit = "min"; }
-            else if (tv > 1e9) { tv /= 1e9; unit = "s"; }
-            else if (tv > 1e6) { tv /= 1e6; unit = "ms"; }
-            else if (tv > 1e3) { tv /= 1e3; unit = "us"; }
-            ImGui::Separator();
-            ImGui::Text("sim time: %.2f %s | step %.2f us | %lld sweeps",
-                        tv, unit, g_mcd.stepTimeNs * 1e-3, (long long)g_mcd.sweepsDone);
-            if (g_mcd.clockExtrapolated)
-                ImGui::TextDisabled("  clock EXTRAPOLATED (no free molecules left)");
-            else
-                ImGui::TextDisabled("  calibrated on %d free mols, MSD %.3f nm^2/sweep"
-                                    " (uncorrected would be %.1f us)",
-                                    g_mcd.lastFreeCount, g_mcd.lastMsdFree,
-                                    g_mcd.stepTimeNominalNs * 1e-3);
-            ImGui::Text("acceptance %.1f%% | poses %zu",
-                        g_mcd.proposed ? 100.0 * g_mcd.accepted / g_mcd.proposed : 0.0,
-                        g_mcd.poses.size());
-            double pr = std::max(1.0, (double)g_mcd.proposed);
-            ImGui::Text("accepted: transport %.1f | dock %.1f | slide %.1f | pivot %.1f (%%all)",
-                        100.0 * g_mcd.accWhole / pr, 100.0 * g_mcd.accDock / pr,
-                        100.0 * g_mcd.accSlide / pr, 100.0 * g_mcd.accPivot / pr);
-            float meanSz = 0;
-            int nc = g_mcd.clusterCount(meanSz);
-            ImGui::Text("bound %.0f%% | clusters %d (mean %.1f)",
-                        g_mcd.boundFraction() * 100.f, nc, meanSz);
-            ImGui::Text("band coherence %.2f | D-fraction %.0f%%",
-                        g_mcd.bandCoherence(), g_mcd.dFraction() * 100.f);
-            ImGui::End();
-            ImGui::Render();
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-            glfwSwapBuffers(win);
-            glFinish();
-            double remainK = 1.0 / targetFps - (glfwGetTime() - frameStart);
-            if (args.frames <= 0 && remainK > 0.002)
-                std::this_thread::sleep_for(std::chrono::duration<double>(remainK));
-            frameIdx++;
-            if (args.frames > 0 && frameIdx >= args.frames) break;
-            continue;
-        }
-        if (appMode == 2) {
-            ImGui::TextWrapped("Gillespie kinetics: whole-molecule events with rates tied "
-                               "to the registry energetics at the current environment. "
-                               "Curves recompute instantly.");
-            {
-                const char* regModes[] = {"off", "1D funnel (dock-and-lock)",
-                                          "2D azimuthal (mean-field)"};
-                int rm = sim.p.registryMode;
-                if (ImGui::Combo("registry##kmc", &rm, regModes, 3)) {
-                    sim.p.registryMode = std::max(1, rm);   // KMC needs a landscape
-                    kmcDirty = true;
-                }
-            }
-            bool d = false;
-            d |= ImGui::SliderFloat("conc (mg/mL)##kmc", &kmcConc, 0.05f, 5.f, "%.2f",
-                                    ImGuiSliderFlags_Logarithmic);
-            d |= ImGui::SliderFloat("temperature (C)##kmc", &sim.p.tempC, 4.f, 45.f, "%.1f");
-            if (ImGui::SliderFloat("pH##kmc", &sim.p.pH, 2.5f, 11.f, "%.2f")) {
-                sim.recombinePH();
-                d = true;
-            }
-            if (sim.hasAtelo) {
-                int at = sim.p.atelo;
-                const char* forms[] = {"telocollagen", "atelocollagen"};
-                if (ImGui::Combo("form##kmc", &at, forms, 2)) {
-                    sim.p.atelo = at;
-                    sim.recombinePH();
-                    d = true;
-                }
-            }
-            if (ImGui::TreeNode("rate model")) {
-                float sw = (float)kmcP.scanWinNm;
-                if (ImGui::SliderFloat("scan window (nm)", &sw, 2.f, 80.f)) {
-                    kmcP.scanWinNm = sw; d = true;
-                }
-                ImGui::SetItemTooltip("how far a docked molecule explores registry\n"
-                                      "before locking: small = kinetic trapping,\n"
-                                      "large = thermodynamic (sharp banding)");
-                float cp = (float)kmcP.contactPairs;
-                if (ImGui::SliderFloat("contact pairs", &cp, 5.f, 60.f)) {
-                    kmcP.contactPairs = cp; d = true;
-                }
-                d |= ImGui::SliderInt("nucleus size", &kmcP.nc, 2, 6);
-                float kn = (float)log10(kmcP.kn), kp = (float)log10(kmcP.kplus);
-                float ko = (float)log10(kmcP.koff0), kf = (float)log10(kmcP.kfrag);
-                if (ImGui::SliderFloat("log10 k_nuc", &kn, 0.f, 8.f)) { kmcP.kn = pow(10, kn); d = true; }
-                if (ImGui::SliderFloat("log10 k_plus", &kp, 3.f, 8.f)) { kmcP.kplus = pow(10, kp); d = true; }
-                if (ImGui::SliderFloat("log10 k_off", &ko, -6.f, 0.f)) { kmcP.koff0 = pow(10, ko); d = true; }
-                if (ImGui::SliderFloat("log10 k_frag", &kf, -10.f, -4.f)) { kmcP.kfrag = pow(10, kf); d = true; }
-                float dg = (float)kmcP.dGscale;
-                if (ImGui::SliderFloat("dG scale", &dg, 0.f, 15.f)) { kmcP.dGscale = dg; d = true; }
-                float tm = (float)kmcP.tMaxMin;
-                if (ImGui::SliderFloat("span (min)", &tm, 30.f, 600.f)) { kmcP.tMaxMin = tm; d = true; }
-                ImGui::TreePop();
-            }
-            if (ImGui::Button("re-roll")) { kmcSeed++; d = true; }
-            ImGui::SameLine();
-            if (ImGui::Button("pin as reference")) { kmcRef = kmcR; kmcHaveRef = true; }
-            if (d) kmcDirty = true;
-
-            if (kmcDirty) {
-                const Basis2D& bAct = (sim.p.atelo && haveAtelo) ? basisA : basis;
-                const Profiles2D& pAct = (sim.p.atelo && haveAtelo) ? prof2A : prof2;
-                float ehyT = sim.p.epsHy * std::max(0.05f, 1.f + 0.013f * (sim.p.tempC - 37.f));
-                KmcProfile kprof, kprofRef;
-                const Corr2D* ct = haveCorr ? &corrTab : nullptr;
-                if (sim.p.registryMode == 1) {
-                    kprof = kmcProfileFunnel(prof, sim.p.epsEl, ehyT,
-                                             tmpl.dPeriodNm, tmpl.lengthNm);
-                    kprofRef = kmcProfileFunnel(prof, sim.p.epsEl, sim.p.epsHy,
-                                                tmpl.dPeriodNm, tmpl.lengthNm);
-                } else {
-                    kprof = kmcProfile1D(bAct, pAct.par, sim.p.pH, sim.p.epsEl,
-                                         ehyT, ct, sim.p.epsCorr);
-                    kprofRef = kmcProfile1D(basis, prof2.par, 7.4f, sim.p.epsEl,
-                                            sim.p.epsHy, ct, sim.p.epsCorr);
-                }
-                kmcR = kmcRun(kmcP, kprof, kprofRef, kmcConc, sim.mwKda, sim.p.tempC,
-                              (uint32_t)kmcSeed);
-                kmcDirty = false;
-            }
-            ImGui::Separator();
-            if (kmcHaveRef && !kmcRef.fibrilMass.empty())
-                ImGui::PlotLines("##ref", kmcRef.fibrilMass.data(), (int)kmcRef.fibrilMass.size(),
-                                 0, "reference (pinned)", 0.f, 1.f, ImVec2(-1, 60));
-            if (!kmcR.fibrilMass.empty()) {
-                ImGui::PlotLines("##fm", kmcR.fibrilMass.data(), (int)kmcR.fibrilMass.size(),
-                                 0, "fibril mass fraction (turbidity)", 0.f, 1.f, ImVec2(-1, 160));
-                ImGui::PlotLines("##fn", kmcR.nFib.data(), (int)kmcR.nFib.size(),
-                                 0, "fibril count", FLT_MAX, FLT_MAX, ImVec2(-1, 70));
-                ImGui::PlotLines("##bo", kmcR.bandOrder.data(), (int)kmcR.bandOrder.size(),
-                                 0, "D-banding order (phase coherence)", 0.f, 1.f,
-                                 ImVec2(-1, 90));
-                if (!kmcR.stagHist.empty())
-                    ImGui::PlotHistogram("##sh", kmcR.stagHist.data(),
-                                         (int)kmcR.stagHist.size(), 0,
-                                         "final stagger distribution (mod D)",
-                                         FLT_MAX, FLT_MAX, ImVec2(-1, 80));
-                ImGui::Text("lag %.1f min | t50 %.1f min | plateau %.0f%% | band %.2f",
-                            kmcR.lagMin, kmcR.t50Min, kmcR.plateau * 100.0,
-                            kmcR.finalOrder);
-                ImGui::Text("koff x%.2g | nuc x%.2g | %d events | span %.0f min",
-                            kmcR.fOff, kmcR.fNuc, kmcR.events, kmcP.tMaxMin);
-            }
-            ImGui::End();
-            ImGui::Render();
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-            glfwSwapBuffers(win);
-            glFinish();
-            double remainK = 1.0 / targetFps - (glfwGetTime() - frameStart);
-            if (args.frames <= 0 && remainK > 0.002)
-                std::this_thread::sleep_for(std::chrono::duration<double>(remainK));
-            frameIdx++;
-            if (args.frames > 0 && frameIdx >= args.frames) break;
             continue;
         }
         ImGui::Text("%.0f fps | %.0f steps/s | t = %.3f us", fps, spsAvg, sim.simTimeNs * 1e-3);
@@ -1029,9 +1194,7 @@ int main(int argc, char** argv) {
             ImGui::SliderFloat("eps depletion (crowding)", &sim.p.epsDep, 0.f, 4.f);
             ImGui::SliderFloat("depletion range (nm)", &sim.p.depR, 1.f, 8.f);
             ImGui::SliderFloat("antiparallel mix", &sim.p.apMix, 0.f, 1.f);
-            const char* regModes[] = {"off (nonspecific)", "1D funnel (idealized)",
-                                      "2D azimuthal (sequence-raw)"};
-            ImGui::Combo("registry model", &sim.p.registryMode, regModes, 3);
+            ImGui::TextDisabled("registry: measured 2D azimuthal + Delta-correction");
             ImGui::SliderFloat("gamma (drag)", &sim.p.gamma, 1.f, 30.f);
             ImGui::SliderFloat("gamma rot", &sim.p.gammaRot, 50.f, 2000.f);
         }

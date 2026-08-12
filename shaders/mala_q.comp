@@ -1,0 +1,35 @@
+#version 460
+// Reverse proposal exponent for the Metropolis-Hastings ratio.
+//
+// The forward term |x' - x - (dt/g) b(x)|^2 is free (it is just the noise the
+// integrator drew). The reverse term needs the drift evaluated at the PROPOSED
+// state, which is why the rigorous step pays a second force evaluation:
+//
+//   q(x | x') ~ exp( -|x - x' - (dt/g) b(x')|^2 / (4 kT dt / g) )
+//
+// mode 0 = positions (nBead threads), mode 1 = twist (nMol threads).
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
+layout(std430, binding = 5) readonly buffer PosNew { vec4 posNew[]; };
+layout(std430, binding = 7) readonly buffer BeadF { vec4 beadF[]; };
+layout(std430, binding = 11) writeonly buffer QPos { float qPos[]; };
+layout(std430, binding = 13) readonly buffer Theta { float theta[]; };
+layout(std430, binding = 2) readonly buffer ThetaNew { float thetaNew[]; };
+layout(std430, binding = 4) readonly buffer ThTq { float thTq[]; };
+layout(std430, binding = 8) writeonly buffer QTh { float qTh[]; };
+
+uniform int n;
+uniform int mode;
+uniform float dt, gamma, gammaRot;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(n)) return;
+    if (mode == 0) {
+        vec3 d = pos[i].xyz - posNew[i].xyz - (dt / gamma) * beadF[i].xyz;
+        qPos[i] = dot(d, d);
+    } else {
+        float d = theta[i] - thetaNew[i] - (dt / gammaRot) * thTq[i];
+        qTh[i] = d * d;
+    }
+}

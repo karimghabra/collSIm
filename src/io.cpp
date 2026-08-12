@@ -101,26 +101,3 @@ Corr2D loadCorr2D(const std::string& path) {
     return c;
 }
 
-Profiles loadProfiles(const std::string& path) {
-    char magic[4];
-    FILE* f = openBin(path, magic);
-    if (memcmp(magic, "PROF", 4)) throw std::runtime_error("bad magic in " + path);
-    uint32_t hdr[3];
-    float fh[3];
-    fread(hdr, 4, 3, f);
-    fread(fh, 4, 3, f);
-    Profiles p;
-    p.nPar = hdr[1];
-    p.nAp = hdr[2];
-    p.ds = fh[0];
-    p.L = fh[1];
-    p.D = fh[2];
-    p.elPar.resize(p.nPar); p.hyPar.resize(p.nPar);
-    p.elAp.resize(p.nAp);   p.hyAp.resize(p.nAp);
-    fread(p.elPar.data(), 4, p.nPar, f);
-    fread(p.hyPar.data(), 4, p.nPar, f);
-    fread(p.elAp.data(), 4, p.nAp, f);
-    fread(p.hyAp.data(), 4, p.nAp, f);
-    fclose(f);
-    return p;
-}

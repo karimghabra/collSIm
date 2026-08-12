@@ -1,0 +1,72 @@
+#version 460
+// Bead-local half of U for the rigorous engine: everything that is not a
+// segment-pair term. Kept separate from the integrator so U can be evaluated
+// at any configuration without proposing a move.
+//
+//   U_bond  = 1/2 kBond (|x_{k+1} - x_k| - a)^2        [one per bond]
+//   U_bend  = kBend (1 - cos theta_k)                  [one per interior bead]
+//   U_wall  = 1/2 kWall * sum_i max(|x_i| - L_i, 0)^2  [non-periodic only]
+//   U_xlink = 1/2 kX (l - rest)^2                      [halved: stored twice]
+//
+// The harmonic bond REPLACES tab 1's XPBD projection. A projection is not a
+// force and has no potential, so no invariant Gibbs measure exists for it --
+// that single substitution is what lets U be written down at all.
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
+layout(std430, binding = 1) readonly buffer Xlink { vec4 xlink[]; };
+layout(std430, binding = 8) writeonly buffer BeadE { float beadE[]; };
+
+uniform int nBead;
+uniform int nBeads;
+uniform float segLen, kBond, kBend, kWall, xlinkK;
+uniform vec3 boxHalf;
+uniform int pbc;
+
+void main() {
+    uint b = gl_GlobalInvocationID.x;
+    if (b >= uint(nBead)) return;
+    int mol = int(b) / nBeads;
+    int k = int(b) % nBeads;
+    vec3 x = pos[b].xyz;
+    float e = 0.0;
+
+    // bond k -> k+1 (counted once, by its lower bead)
+    if (k < nBeads - 1) {
+        float l = length(pos[b + 1].xyz - x);
+        float s = l - segLen;
+        e += 0.5 * kBond * s * s;
+    }
+
+    // bending angle centred on this bead
+    if (k >= 1 && k <= nBeads - 2) {
+        vec3 xm = pos[mol * nBeads + k - 1].xyz;
+        vec3 xp = pos[mol * nBeads + k + 1].xyz;
+        vec3 d1 = x - xm, d2 = xp - x;
+        float l1 = length(d1), l2 = length(d2);
+        if (l1 > 1e-9 && l2 > 1e-9)
+            e += kBend * (1.0 - dot(d1 / l1, d2 / l2));
+    }
+
+    if (pbc == 0) {
+        vec3 over = max(abs(x) - boxHalf, vec3(0.0));
+        e += 0.5 * kWall * dot(over, over);
+    }
+
+    if (xlinkK > 0.0) {
+        vec4 xl = xlink[b];
+        for (int s = 0; s < 2; ++s) {
+            int pt = floatBitsToInt(s == 0 ? xl.x : xl.z);
+            if (pt < 0) continue;
+            float rest = s == 0 ? xl.y : xl.w;
+            vec3 dv = pos[pt].xyz - x;
+            if (pbc == 1) {
+                vec3 bs = 2.0 * boxHalf;
+                dv -= bs * round(dv / bs);
+            }
+            float s2 = length(dv) - rest;
+            e += 0.5 * (0.5 * xlinkK * s2 * s2);   // both partners store it
+        }
+    }
+
+    beadE[b] = e;
+}

@@ -61,14 +61,11 @@ void Sim::recombinePH() {
     glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
-void Sim::init(const AtomTemplate& tmpl, const Profiles& prof, const Profiles2D& prof2,
+void Sim::init(const AtomTemplate& tmpl, const Profiles2D& prof2,
                const Basis2D& basis, const Profiles2D* prof2A, const Basis2D* basisA,
                const Corr2D* corr) {
     molLen = tmpl.lengthNm;
     dPeriod = tmpl.dPeriodNm;
-    profDs = prof.ds;
-    nPar = prof.nPar;
-    nAp = prof.nAp;
     p2Dstep = prof2.dstep;
     p2S0 = prof2.S0;
     p2nD = prof2.nD;
@@ -134,22 +131,6 @@ void Sim::init(const AtomTemplate& tmpl, const Profiles& prof, const Profiles2D&
         hyApBuf2 = makeSSBO(ha.size() * 4, ha.data());
     }
 
-    // registry-energy textures: R = electrostatic, G = hydrophobic
-    std::vector<float> par(nPar * 2), ap(nAp * 2);
-    for (int i = 0; i < nPar; ++i) { par[2*i] = prof.elPar[i]; par[2*i+1] = prof.hyPar[i]; }
-    for (int i = 0; i < nAp; ++i)  { ap[2*i] = prof.elAp[i];   ap[2*i+1] = prof.hyAp[i]; }
-    glCreateTextures(GL_TEXTURE_1D, 1, &texPar);
-    glTextureStorage1D(texPar, 1, GL_RG32F, nPar);
-    glTextureSubImage1D(texPar, 0, 0, nPar, GL_RG, GL_FLOAT, par.data());
-    glCreateTextures(GL_TEXTURE_1D, 1, &texAp);
-    glTextureStorage1D(texAp, 1, GL_RG32F, nAp);
-    glTextureSubImage1D(texAp, 0, 0, nAp, GL_RG, GL_FLOAT, ap.data());
-    for (GLuint t : {texPar, texAp}) {
-        glTextureParameteri(t, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTextureParameteri(t, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTextureParameteri(t, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    }
-
     prCount.computeFromFile("shaders/grid_count.comp");
     prScan1.computeFromFile("shaders/grid_scan1.comp");
     prScan2.computeFromFile("shaders/grid_scan2.comp");
@@ -158,6 +139,14 @@ void Sim::init(const AtomTemplate& tmpl, const Profiles& prof, const Profiles2D&
     prForces.computeFromFile("shaders/forces.comp");
     prInteg.computeFromFile("shaders/integrate.comp");
     prXpbd.computeFromFile("shaders/xpbd.comp");
+    prForcesU.computeFromFile("shaders/forces_u.comp");
+    prEnergyBead.computeFromFile("shaders/energy_bead.comp");
+    prIntegU.computeFromFile("shaders/integrate_u.comp");
+    prReduce.computeFromFile("shaders/energy_reduce.comp");
+    prRotU.computeFromFile("shaders/rot_integrate_u.comp");
+    prMalaQ.computeFromFile("shaders/mala_q.comp");
+    prMalaAccept.computeFromFile("shaders/mala_accept.comp");
+    prMalaCommit.computeFromFile("shaders/mala_commit.comp");
     prFrames.computeFromFile("shaders/frames.comp");
     prRot.computeFromFile("shaders/rot_integrate.comp");
     prRecomb.computeFromFile("shaders/recombine.comp");
@@ -165,7 +154,6 @@ void Sim::init(const AtomTemplate& tmpl, const Profiles& prof, const Profiles2D&
     prCenters.computeFromFile("shaders/mol_centers.comp");
     prNbr.computeFromFile("shaders/nbr_collect.comp");
     prRecenter.computeFromFile("shaders/recenter.comp");
-    prMc.computeFromFile("shaders/mc_moves.comp");
 
     restart();
     recombinePH();
@@ -319,6 +307,8 @@ void Sim::restart() {
     del(statsBuf); del(thetaBuf); del(segTqBuf);
     del(renderPosBuf); del(centersBuf); del(nbrListBuf); del(nbrCntBuf); del(ageBuf);
     del(attMagBuf);
+    del(segEBuf); del(beadEBuf); del(beadFBuf); del(partialBuf);
+    del(thetaBuf2); del(qPosBuf); del(qThBuf); del(thTqBuf); del(totalBuf);
 
     posBuf = makeSSBO(sizeof(vec4) * nBead(), pos.data());
     posBuf2 = makeSSBO(sizeof(vec4) * nBead(), pos.data());
@@ -336,6 +326,17 @@ void Sim::restart() {
         thetaBuf = makeSSBO(4u * p.nMol, th.data());
     }
     segTqBuf = makeSSBO(4u * nSeg());
+    // rigorous engine: per-term energies + double-precision reduction scratch
+    segEBuf = makeSSBO(4u * nSeg());
+    beadEBuf = makeSSBO(4u * nBead());
+    beadFBuf = makeSSBO(sizeof(vec4) * nBead());
+    partialBuf = makeSSBO(8u * size_t((std::max(nSeg(), nBead()) + 255) / 256 + 1));
+    thetaBuf2 = makeSSBO(4u * p.nMol);
+    qPosBuf = makeSSBO(4u * nBead());
+    qThBuf = makeSSBO(4u * p.nMol);
+    thTqBuf = makeSSBO(4u * p.nMol);
+    totalBuf = makeSSBO(8u * 8u);
+    glClearNamedBufferData(totalBuf, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
     renderPosBuf = makeSSBO(sizeof(vec4) * nBead(), pos.data());
     centersBuf = makeSSBO(sizeof(vec4) * p.nMol);
     nbrListBuf = makeSSBO(4u * size_t(nSeg()) * NBR_CAP);
@@ -394,6 +395,8 @@ void Sim::restart() {
     }
 
     simTimeNs = 0;
+    malaTries = malaAccepted = 0;
+    malaAccept = 1.0;
     totalSteps = 0;
     burnin = 1500;    // soft-start: relax initial overlaps before attractions
     computeFrames();
@@ -496,13 +499,24 @@ void Sim::restore(const SimState& s, bool reseed, uint32_t newSeed) {
 }
 
 void Sim::step(int nSteps) {
+    if (p.engine == 2) stepConstrained(nSteps);
+    else if (p.engine == 1) stepRigorous(nSteps);
+    else stepFast(nSteps);
+}
+
+float Sim::kBond() const {
+    float s = std::max(1e-3f, p.bondStrain) * segLen;
+    return p.kT / (s * s);
+}
+
+void Sim::stepFast(int nSteps) {
     float tK = 273.15f + p.tempC;
     float kTeff = p.kT * tK / 310.15f;
     // hydrophobic effect is entropic: strengthens warm, weakens cold
     float epsHyEff = p.epsHy * std::max(0.05f, 1.f + 0.013f * (tK - 310.15f));
     for (int s = 0; s < nSteps; ++s) {
         if (totalSteps % 4 == 0) buildGrid();
-        if (p.registryMode == 2) computeFrames();   // forces need material frames
+        computeFrames();                            // forces need material frames
 
         // soft-start ramp: gentle repulsion first, attractions fade in
         float ramp = burnin > 0 ? 1.f - float(burnin) / 1500.f : 1.f;
@@ -527,14 +541,9 @@ void Sim::step(int nSteps) {
         prForces.set("epsDep", p.epsDep * ramp);
         prForces.set("depR", p.depR);
         prForces.set("apMix", p.apMix);
-        prForces.set("specific", p.specific);
         prForces.set("molLen", molLen);
-        prForces.set("profDs", profDs);
-        prForces.set("nPar", nPar);
-        prForces.set("nAp", nAp);
         prForces.set("fMax", p.fMax);
         prForces.set("dPeriod", dPeriod);
-        prForces.set("registryMode", p.registryMode);
         prForces.set("p2Dstep", p2Dstep);
         prForces.set("p2S0", p2S0);
         prForces.set("p2nD", p2nD);
@@ -554,8 +563,6 @@ void Sim::step(int nSteps) {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, frameBuf);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, statsBuf);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, segTqBuf);
-        glBindTextureUnit(0, texPar);
-        glBindTextureUnit(1, texAp);
         glBindTextureUnit(2, texPar2);
         glBindTextureUnit(3, texAp2);
         glDispatchCompute((nSeg() + 127) / 128, 1, 1);
@@ -582,7 +589,7 @@ void Sim::step(int nSteps) {
         glDispatchCompute((nBead() + 255) / 256, 1, 1);
         barrier();
 
-        if (p.registryMode == 2) {
+        {
             prRot.use();
             prRot.set("nMol", p.nMol);
             prRot.set("nBeads", p.nBeads);
@@ -610,6 +617,399 @@ void Sim::step(int nSteps) {
         std::swap(posBuf, posBuf2);
         totalSteps++;
         simTimeNs += p.dt * p.speed;   // physical time at physical drag
+
+        if (p.pbc && totalSteps % 16 == 0) {
+            prRecenter.use();
+            prRecenter.set("nMol", p.nMol);
+            prRecenter.set("nBeads", p.nBeads);
+            prRecenter.set("boxHalf", p.boxHalf);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuf);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, renderPosBuf);
+            glDispatchCompute((p.nMol + 63) / 64, 1, 1);
+            barrier();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rigorous engine. Everything below evaluates or propagates the explicit
+// potential U; nothing here clamps, truncates or saturates.
+// ---------------------------------------------------------------------------
+
+void Sim::pairPassU(GLuint posBuffer, float ramp) {
+    float tK = 273.15f + p.tempC;
+    float epsHyEff = p.epsHy * std::max(0.05f, 1.f + 0.013f * (tK - 310.15f));
+    float repRamp = 0.25f + 0.75f * ramp;
+    prForcesU.use();
+    prForcesU.set("nSeg", nSeg());
+    prForcesU.set("nBeads", p.nBeads);
+    prForcesU.set("segLen", segLen);
+    prForcesU.set("boxHalf", p.boxHalf);
+    prForcesU.set("rRep", p.rRep);
+    prForcesU.set("kRep", p.kRep * repRamp);
+    prForcesU.set("attR0", p.attR0);
+    prForcesU.set("attW", p.attW);
+    prForcesU.set("cutoff", p.cutoff + (p.epsDep > 0.f ? p.depR : 0.f));
+    prForcesU.set("epsEl", p.epsEl * ramp);
+    prForcesU.set("epsHy", epsHyEff * ramp);
+    prForcesU.set("epsNs", p.epsNs * ramp);
+    prForcesU.set("epsCorr", hasCorr ? p.epsCorr * ramp : 0.f);
+    prForcesU.set("wExp", p.wExp);
+    prForcesU.set("epsDep", p.epsDep * ramp);
+    prForcesU.set("depR", p.depR);
+    prForcesU.set("apMix", p.apMix);
+    prForcesU.set("dPeriod", dPeriod);
+    prForcesU.set("p2Dstep", p2Dstep);
+    prForcesU.set("p2S0", p2S0);
+    prForcesU.set("p2nD", p2nD);
+    prForcesU.set("p2nR", p2nR);
+    prForcesU.set("p2nPhi", p2nPhi);
+    prForcesU.set("nbrCap", NBR_CAP);
+    prForcesU.set("pbc", p.pbc);
+    int statsOn = (totalSteps % 16 == 0) ? 1 : 0;
+    prForcesU.set("statsOn", statsOn);
+    if (statsOn)
+        glClearNamedBufferData(statsBuf, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, nbrListBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, nbrCntBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, segFBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, segEBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, frameBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, statsBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, segTqBuf);
+    glBindTextureUnit(2, texPar2);
+    glBindTextureUnit(3, texAp2);
+    glDispatchCompute((nSeg() + 127) / 128, 1, 1);
+    barrier();
+}
+
+void Sim::beadEnergy(GLuint posBuffer) {
+    prEnergyBead.use();
+    prEnergyBead.set("nBead", nBead());
+    prEnergyBead.set("nBeads", p.nBeads);
+    prEnergyBead.set("segLen", segLen);
+    prEnergyBead.set("kBond", kBond());
+    prEnergyBead.set("kBend", p.persistLen * p.kT / segLen);
+    prEnergyBead.set("kWall", p.kWall);
+    prEnergyBead.set("xlinkK", nXlinks > 0 ? p.xlinkK : 0.f);
+    prEnergyBead.set("boxHalf", p.boxHalf);
+    prEnergyBead.set("pbc", p.pbc);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, xlinkBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, beadEBuf);
+    glDispatchCompute((nBead() + 255) / 256, 1, 1);
+    barrier();
+}
+
+void Sim::reduceSum(GLuint src, int n, int slot, bool accumulate, float scale) {
+    int groups = (n + 255) / 256;
+    prReduce.use();
+    prReduce.set("n", n);
+    prReduce.set("stage", 0);
+    prReduce.set("slot", slot);
+    prReduce.set("scale", scale);
+    prReduce.set("accumulate", 0);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, src);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, partialBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 14, totalBuf);
+    glDispatchCompute(groups, 1, 1);
+    barrier();
+    prReduce.set("n", groups);
+    prReduce.set("stage", 1);
+    prReduce.set("accumulate", accumulate ? 1 : 0);
+    glDispatchCompute(1, 1, 1);
+    barrier();
+}
+
+void Sim::integU(GLuint posIn, GLuint posOut, bool driftOnly) {
+    float tK = 273.15f + p.tempC;
+    float kTeff = p.kT * tK / 310.15f;
+    prIntegU.use();
+    prIntegU.set("nBead", nBead());
+    prIntegU.set("nBeads", p.nBeads);
+    prIntegU.set("dt", p.dtRig);
+    prIntegU.set("gamma", p.gamma);          // no `speed`: one honest knob
+    prIntegU.set("kT", kTeff);
+    prIntegU.set("segLen", segLen);
+    prIntegU.set("kBond", kBond());
+    prIntegU.set("kBend", p.persistLen * p.kT / segLen);
+    prIntegU.set("boxHalf", p.boxHalf);
+    prIntegU.set("kWall", p.kWall);
+    prIntegU.set("pbc", p.pbc);
+    prIntegU.set("xlinkK", nXlinks > 0 ? p.xlinkK : 0.f);
+    prIntegU.set("lmNoise", p.lmNoise);
+    prIntegU.set("driftOnly", driftOnly ? 1 : 0);
+    prIntegU.set("seed", (unsigned)(p.seed + (totalSteps & 0x7fffffff)));
+    prIntegU.set("seedNext", (unsigned)(p.seed + ((totalSteps + 1) & 0x7fffffff)));
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posIn);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, xlinkBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, segFBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, posOut);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, beadFBuf);
+    glDispatchCompute((nBead() + 255) / 256, 1, 1);
+    barrier();
+}
+
+void Sim::driftAt(GLuint posBuffer) {
+    GLuint pb = posBuffer ? posBuffer : posBuf;
+    integU(pb, posBuf2, true);
+}
+
+double Sim::computeU(GLuint posBuffer) {
+    GLuint pb = posBuffer ? posBuffer : posBuf;
+    computeFrames(pb);
+    pairPassU(pb, 1.f);
+    beadEnergy(pb);
+    reduceSum(segEBuf, nSeg(), 0, false);
+    reduceSum(beadEBuf, nBead(), 0, true);
+    double u = 0;
+    glGetNamedBufferSubData(totalBuf, 0, 8, &u);
+    lastU = u;
+    return u;
+}
+
+void Sim::rotU(GLuint thIn, GLuint thOut, bool driftOnly) {
+    float tK = 273.15f + p.tempC;
+    float kTeff = p.kT * tK / 310.15f;
+    prRotU.use();
+    prRotU.set("nMol", p.nMol);
+    prRotU.set("nBeads", p.nBeads);
+    prRotU.set("dt", p.dtRig);
+    prRotU.set("gammaRot", p.gammaRot);
+    prRotU.set("kT", kTeff);
+    prRotU.set("driftOnly", driftOnly ? 1 : 0);
+    prRotU.set("seed", (unsigned)(p.seed * 7u + (totalSteps & 0x7fffffff)));
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, segTqBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, thIn);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, thOut);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, thTqBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, qThBuf);
+    glDispatchCompute((p.nMol + 63) / 64, 1, 1);
+    barrier();
+}
+
+void Sim::malaQ(int mode, int n) {
+    prMalaQ.use();
+    prMalaQ.set("n", n);
+    prMalaQ.set("mode", mode);
+    prMalaQ.set("dt", p.dtRig);
+    prMalaQ.set("gamma", p.gamma);
+    prMalaQ.set("gammaRot", p.gammaRot);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, posBuf2);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, beadFBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, qPosBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, thetaBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, thetaBuf2);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, thTqBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, qThBuf);
+    glDispatchCompute((n + 255) / 256, 1, 1);
+    barrier();
+}
+
+// Metropolis-adjusted Langevin. Positions and twist are proposed JOINTLY with
+// independent Gaussians and accepted or rejected together: splitting them would
+// need two full U evaluations per step instead of two total, and freezing theta
+// would leave the twist DOF unequilibrated.
+//
+// The neighbour list is deliberately NOT rebuilt between the two endpoints --
+// U(x) and U(x') must be computed with the same list or their difference is
+// meaningless. The 3 nm Verlet skin covers the ~0.04 nm proposals easily.
+void Sim::stepMala(int nSteps) {
+    float tK = 273.15f + p.tempC;
+    float kTeff = p.kT * tK / 310.15f;
+    int lmSave = p.lmNoise;
+    p.lmNoise = 0;              // correlated noise breaks the Metropolis ratio
+    for (int s = 0; s < nSteps; ++s) {
+        if (totalSteps % 4 == 0) buildGrid();
+        float ramp = burnin > 0 ? 1.f - float(burnin) / 1500.f : 1.f;
+        if (burnin > 0) burnin--;
+
+        // U(x), and the drift that defines the forward proposal
+        computeFrames(posBuf, thetaBuf);
+        pairPassU(posBuf, ramp);
+        beadEnergy(posBuf);
+        reduceSum(segEBuf, nSeg(), 0, false);
+        reduceSum(beadEBuf, nBead(), 0, true);
+        integU(posBuf, posBuf2, false);
+        rotU(thetaBuf, thetaBuf2, false);
+        reduceSum(qPosBuf, nBead(), 1, false);
+        reduceSum(qThBuf, p.nMol, 2, false);
+
+        // U(x'), and the drift there -- this second force pass is the whole
+        // cost of being Metropolis-adjusted
+        computeFrames(posBuf2, thetaBuf2);
+        pairPassU(posBuf2, ramp);
+        beadEnergy(posBuf2);
+        reduceSum(segEBuf, nSeg(), 3, false);
+        reduceSum(beadEBuf, nBead(), 3, true);
+        integU(posBuf2, renderPosBuf, true);     // driftOnly: output unused
+        rotU(thetaBuf2, thetaBuf2, true);
+        malaQ(0, nBead());
+        malaQ(1, p.nMol);
+        reduceSum(qPosBuf, nBead(), 4, false);
+        reduceSum(qThBuf, p.nMol, 5, false);
+
+        prMalaAccept.use();
+        prMalaAccept.set("kT", kTeff);
+        prMalaAccept.set("dt", p.dtRig);
+        prMalaAccept.set("gamma", p.gamma);
+        prMalaAccept.set("gammaRot", p.gammaRot);
+        prMalaAccept.set("seed", (unsigned)(p.seed * 2654435761u +
+                                            (totalSteps & 0x7fffffff)));
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 14, totalBuf);
+        glDispatchCompute(1, 1, 1);
+        barrier();
+
+        prMalaCommit.use();
+        prMalaCommit.set("nBead", nBead());
+        prMalaCommit.set("nMol", p.nMol);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuf);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, posBuf2);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, thetaBuf);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, thetaBuf2);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 14, totalBuf);
+        glDispatchCompute((nBead() + 255) / 256, 1, 1);
+        barrier();
+
+        std::swap(posBuf, posBuf2);
+        std::swap(thetaBuf, thetaBuf2);
+        totalSteps++;
+        malaTries++;
+        simTimeNs += p.dtRig;
+
+        if (totalSteps % 64 == 0) {
+            double acc = 0;
+            glGetNamedBufferSubData(totalBuf, 56, 8, &acc);
+            malaAccepted = (int64_t)acc;
+            malaAccept = malaTries > 0 ? double(malaAccepted) / double(malaTries) : 1.0;
+        }
+        if (p.pbc && totalSteps % 16 == 0) {
+            prRecenter.use();
+            prRecenter.set("nMol", p.nMol);
+            prRecenter.set("nBeads", p.nBeads);
+            prRecenter.set("boxHalf", p.boxHalf);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuf);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, renderPosBuf);
+            glDispatchCompute((p.nMol + 63) / 64, 1, 1);
+            barrier();
+        }
+    }
+    p.lmNoise = lmSave;
+}
+
+// Red-black SHAKE. xpbd.comp already solves one constraint exactly and skips
+// alternate bonds so no two touching constraints run together; iterating it is
+// Gauss-Seidel SHAKE. Tab 1 runs 4 sweeps, which does NOT converge -- its
+// measured bond spread is 0.052 nm of pure residual projection error. This
+// runs enough sweeps to actually satisfy |b| = a.
+void Sim::shake(GLuint posBuffer, int iters) {
+    prXpbd.use();
+    prXpbd.set("nSeg", nSeg());
+    prXpbd.set("nBeads", p.nBeads);
+    prXpbd.set("segLen", segLen);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, posBuffer);
+    for (int it = 0; it < iters; ++it) {
+        prXpbd.set("parity", it & 1);
+        glDispatchCompute((nSeg() + 255) / 256, 1, 1);
+        barrier();
+    }
+}
+
+// Constrained overdamped Langevin: the conservative force field of engine 1
+// with kBond = 0, followed by projection back onto |b_i| = a.
+//
+// NOT YET EXACT. Two pieces are missing and both fail silently:
+//   1. The Fixman potential U_F = (kT/2) ln det(J J^T). For a bead chain J J^T
+//      is tridiagonal(2, -cos theta_k), so it depends on the bond angles and is
+//      not a constant. Without it the sampled angle distribution is the RIGID
+//      ensemble, not the stiff-spring limit the rest of the model assumes.
+//   2. Metropolis adjustment, which on a manifold needs a tangent-space
+//      proposal plus a reverse-projection check (Zappa/Holmes-Cerfon/Goodman
+//      2018) -- omitting the check breaks detailed balance.
+// The size of (1) is measurable with --equipart against the analytic
+// <cos t> = coth kappa - 1/kappa, which is exactly why this tab exists.
+void Sim::stepConstrained(int nSteps) {
+    float tK = 273.15f + p.tempC;
+    float kTeff = p.kT * tK / 310.15f;
+    float savedStrain = p.bondStrain;
+    float savedDt = p.dtRig;
+    p.dtRig = p.dtCon;
+    for (int s = 0; s < nSteps; ++s) {
+        if (totalSteps % 4 == 0) buildGrid();
+        computeFrames();
+        float ramp = burnin > 0 ? 1.f - float(burnin) / 1500.f : 1.f;
+        if (burnin > 0) burnin--;
+        pairPassU(posBuf, ramp);
+        // kBond = 0: the bond is a constraint, not a term in U
+        float kb = kBond();
+        (void)kb;
+        p.bondStrain = 1e9f;                 // -> kBond ~ 0
+        integU(posBuf, posBuf2, false);
+        p.bondStrain = savedStrain;
+        shake(posBuf2, p.shakeIters);
+
+        prRot.use();
+        prRot.set("nMol", p.nMol);
+        prRot.set("nBeads", p.nBeads);
+        prRot.set("dt", p.dtCon);
+        prRot.set("gammaRot", p.gammaRot);
+        prRot.set("kT", kTeff);
+        prRot.set("seed", (unsigned)(p.seed * 7u + (totalSteps & 0x7fffffff)));
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, segTqBuf);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, thetaBuf);
+        glDispatchCompute((p.nMol + 63) / 64, 1, 1);
+        barrier();
+
+        std::swap(posBuf, posBuf2);
+        totalSteps++;
+        simTimeNs += p.dtCon;
+
+        if (p.pbc && totalSteps % 16 == 0) {
+            prRecenter.use();
+            prRecenter.set("nMol", p.nMol);
+            prRecenter.set("nBeads", p.nBeads);
+            prRecenter.set("boxHalf", p.boxHalf);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuf);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, renderPosBuf);
+            glDispatchCompute((p.nMol + 63) / 64, 1, 1);
+            barrier();
+        }
+    }
+    p.dtRig = savedDt;
+}
+
+void Sim::stepRigorous(int nSteps) {
+    if (p.mala) { stepMala(nSteps); return; }
+    float tK = 273.15f + p.tempC;
+    float kTeff = p.kT * tK / 310.15f;
+    for (int s = 0; s < nSteps; ++s) {
+        if (totalSteps % 4 == 0) buildGrid();
+        computeFrames();
+        // soft start after a restart: the rigorous engine has no force clamp
+        // to absorb an initial overlap, so the ramp is load-bearing here
+        float ramp = burnin > 0 ? 1.f - float(burnin) / 1500.f : 1.f;
+        if (burnin > 0) burnin--;
+        pairPassU(posBuf, ramp);
+        integU(posBuf, posBuf2, false);
+
+        prRot.use();
+        prRot.set("nMol", p.nMol);
+        prRot.set("nBeads", p.nBeads);
+        prRot.set("dt", p.dtRig);
+        prRot.set("gammaRot", p.gammaRot);
+        prRot.set("kT", kTeff);
+        prRot.set("seed", (unsigned)(p.seed * 7u + (totalSteps & 0x7fffffff)));
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, segTqBuf);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, thetaBuf);
+        glDispatchCompute((p.nMol + 63) / 64, 1, 1);
+        barrier();
+
+        // no XPBD projection here: the bond is a term in U
+        std::swap(posBuf, posBuf2);
+        totalSteps++;
+        simTimeNs += p.dtRig;
 
         if (p.pbc && totalSteps % 16 == 0) {
             prRecenter.use();
@@ -702,6 +1102,8 @@ void Sim::insertMolecules(int nNew, float nowSec) {
     del(posBuf); del(posBuf2); del(frameBuf); del(segFBuf); del(gridIds);
     del(thetaBuf); del(segTqBuf); del(renderPosBuf); del(centersBuf);
     del(nbrListBuf); del(nbrCntBuf); del(ageBuf);
+    del(segEBuf); del(beadEBuf); del(beadFBuf); del(partialBuf);
+    del(thetaBuf2); del(qPosBuf); del(qThBuf); del(thTqBuf);
     posBuf = makeSSBO(sizeof(vec4) * nBead(), pos.data());
     posBuf2 = makeSSBO(sizeof(vec4) * nBead(), pos.data());
     frameBuf = makeSSBO(sizeof(vec4) * nBead());
@@ -709,6 +1111,14 @@ void Sim::insertMolecules(int nNew, float nowSec) {
     gridIds = makeSSBO(4u * nSeg());
     thetaBuf = makeSSBO(4u * p.nMol, th.data());
     segTqBuf = makeSSBO(4u * nSeg());
+    segEBuf = makeSSBO(4u * nSeg());
+    beadEBuf = makeSSBO(4u * nBead());
+    beadFBuf = makeSSBO(sizeof(vec4) * nBead());
+    partialBuf = makeSSBO(8u * size_t((std::max(nSeg(), nBead()) + 255) / 256 + 1));
+    thetaBuf2 = makeSSBO(4u * p.nMol);
+    qPosBuf = makeSSBO(4u * nBead());
+    qThBuf = makeSSBO(4u * p.nMol);
+    thTqBuf = makeSSBO(4u * p.nMol);
     renderPosBuf = makeSSBO(sizeof(vec4) * nBead(), pos.data());
     centersBuf = makeSSBO(sizeof(vec4) * p.nMol);
     nbrListBuf = makeSSBO(4u * size_t(nSeg()) * NBR_CAP);
@@ -732,76 +1142,13 @@ void Sim::readStats() {
     glGetNamedBufferSubData(statsBuf, 0, 32, stats);
 }
 
-void Sim::mcPass(int nPasses) {
-    float tK = 273.15f + p.tempC;
-    float kTeff = p.kT * tK / 310.15f;
-    float epsHyEff = p.epsHy * std::max(0.05f, 1.f + 0.013f * (tK - 310.15f));
-    for (int pass = 0; pass < nPasses; ++pass) {
-        buildGrid();
-        if (p.registryMode == 2) computeFrames();   // funnel mode needs no frames
-        prMc.use();
-        prMc.set("nMol", p.nMol);
-        prMc.set("nBeads", p.nBeads);
-        prMc.set("segLen", segLen);
-        prMc.set("boxHalf", p.boxHalf);
-        prMc.set("cellSize", cellSize);
-        prMc.set("gridDim", glm::vec3(gridDim));
-        prMc.set("pbc", p.pbc);
-        prMc.set("rRep", p.rRep);
-        prMc.set("kRep", p.kRep);
-        prMc.set("attR0", p.attR0);
-        prMc.set("attW", p.attW);
-        prMc.set("cutoff", p.cutoff + (p.epsDep > 0.f ? p.depR : 0.f));
-        prMc.set("epsEl", p.epsEl);
-        prMc.set("epsHy", epsHyEff);
-        prMc.set("epsNs", p.epsNs);
-        prMc.set("epsCorr", hasCorr ? p.epsCorr : 0.f);
-        prMc.set("wExp", p.wExp);
-        prMc.set("apMix", p.apMix);
-        prMc.set("kWall", p.kWall);
-        prMc.set("kT", kTeff);
-        prMc.set("registryMode", p.registryMode);
-        prMc.set("profDs", profDs);
-        prMc.set("nPar", nPar);
-        prMc.set("nAp", nAp);
-        prMc.set("p2Dstep", p2Dstep);
-        prMc.set("p2S0", p2S0);
-        prMc.set("p2nD", p2nD);
-        prMc.set("p2nR", p2nR);
-        prMc.set("p2nPhi", p2nPhi);
-        prMc.set("seed", p.seed * 31u + 7u);
-        prMc.set("mcStep", mcStepCounter++);
-        prMc.set("stride", p.mcStride);
-        prMc.set("nbrCap", NBR_CAP);
-        prMc.set("ampT", p.mcAmpT);
-        prMc.set("ampR", p.mcAmpR);
-        prMc.set("ampS", p.mcAmpS);
-        prMc.set("ampTw", p.mcAmpTw);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gridOffset);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, gridIds);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, frameBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, statsBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, nbrListBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, nbrCntBuf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, gridCount);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, thetaBuf);
-        glBindTextureUnit(0, texPar);
-        glBindTextureUnit(1, texAp);
-        glBindTextureUnit(2, texPar2);
-        glBindTextureUnit(3, texAp2);
-        glDispatchCompute(p.nMol, 1, 1);   // one workgroup per molecule
-        barrier();
-    }
-}
-
-void Sim::computeFrames(GLuint posBuffer) {
+void Sim::computeFrames(GLuint posBuffer, GLuint thBuffer) {
     prFrames.use();
     prFrames.set("nMol", p.nMol);
     prFrames.set("nBeads", p.nBeads);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, posBuffer ? posBuffer : posBuf);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, frameBuf);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, thetaBuf);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, thBuffer ? thBuffer : thetaBuf);
     glDispatchCompute((p.nMol + 63) / 64, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 }

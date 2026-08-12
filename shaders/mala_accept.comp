@@ -1,0 +1,44 @@
+#version 460
+// The Metropolis-Hastings test, run entirely on the GPU by a single thread.
+//
+// A CPU readback here would stall the pipeline every step, so the decision, the
+// uniform draw and the counters all live in the double-precision total buffer:
+//
+//   [0] U(x)      [1] fwd |dx|^2   [2] fwd |dtheta|^2
+//   [3] U(x')     [4] rev |dx|^2   [5] rev |dtheta|^2
+//   [6] accept flag (0/1)          [7] running accepted count
+//
+//   log a = -(U' - U)/kT
+//         + (fwd_x - rev_x)   / (4 kT dt / gamma)
+//         + (fwd_th - rev_th) / (4 kT dt / gammaRot)
+//
+// Positions and twist are proposed jointly with independent Gaussians, so the
+// two proposal exponents simply add -- but they carry DIFFERENT variances and
+// must not be pooled into one reduction.
+layout(local_size_x = 1) in;
+layout(std430, binding = 14) buffer Total { double total[]; };
+
+uniform float kT, dt, gamma, gammaRot;
+uniform uint seed;
+
+uvec4 pcg4d(uvec4 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+    v ^= v >> 16u;
+    v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+    return v;
+}
+
+void main() {
+    double dU = total[3] - total[0];
+    double sx = (total[1] - total[4]) / double(4.0 * kT * dt / gamma);
+    double st = (total[2] - total[5]) / double(4.0 * kT * dt / gammaRot);
+    double logA = -dU / double(kT) + sx + st;
+
+    uvec4 r = pcg4d(uvec4(seed, 0x51633E2Du, 0xC2B2AE35u, 0x27220A95u));
+    float u = (float(r.x >> 8) + 0.5) / 16777216.0;
+    bool acc = (logA >= 0.0lf) || (double(log(u)) < logA);
+
+    total[6] = acc ? 1.0lf : 0.0lf;
+    if (acc) total[7] = total[7] + 1.0lf;
+}

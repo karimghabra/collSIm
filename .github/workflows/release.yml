@@ -23,7 +23,6 @@ jobs:
         run: |
           pip install numpy matplotlib
           python tools/build_tropocollagen.py
-          python tools/interaction_profile.py
           python tools/azimuthal_profile.py
           python tools/azimuthal_profile.py --atelo
           python tools/pmf_merge.py

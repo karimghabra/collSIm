@@ -1,0 +1,130 @@
+#version 460
+// Overdamped Langevin step for the RIGOROUS engine.
+//
+// Differences from integrate.comp that matter:
+//   * bonds are a stiff harmonic term in U, not an XPBD projection afterwards
+//   * NO displacement clamp. In the fast engine dxMax = 0.35 nm fires on ~70%
+//     of steps from thermal noise alone, which silently truncates the Gaussian
+//     and makes the sampled distribution something nobody wrote down.
+//   * NO force clamp and no attraction saturation (see forces_u.comp)
+//   * optional Leimkuhler-Matthews noise: xi -> (xi_n + xi_{n+1})/2 drops the
+//     invariant-measure error from O(dt) to O(dt^2) for free. Consecutive
+//     steps share a draw, which is why it must be OFF under MALA -- the
+//     Metropolis ratio assumes independent noise.
+//
+// Writes beadF (total force, pre-noise) so the finite-difference gradient
+// test and the Metropolis proposal density can both read the drift back.
+layout(local_size_x = 256) in;
+layout(std430, binding = 0) readonly buffer Pos { vec4 pos[]; };
+layout(std430, binding = 1) readonly buffer Xlink { vec4 xlink[]; };
+layout(std430, binding = 3) readonly buffer SegF { vec4 segF[]; };
+layout(std430, binding = 5) writeonly buffer PosNew { vec4 posNew[]; };
+layout(std430, binding = 7) writeonly buffer BeadF { vec4 beadF[]; };
+// |x' - x - (dt/gamma) b(x)|^2 per bead = the forward proposal exponent.
+// Equal to |sigma*g|^2, so the integrator already knows it for free.
+layout(std430, binding = 11) writeonly buffer QPos { float qPos[]; };
+
+uniform int nBead;
+uniform int nBeads;
+uniform float dt, gamma, kT, segLen, kBond, kBend, kWall, xlinkK;
+uniform vec3 boxHalf;
+uniform uint seed;
+uniform uint seedNext;
+uniform int pbc;
+uniform int lmNoise;      // 1: Leimkuhler-Matthews averaged noise
+uniform int driftOnly;    // 1: write beadF only, leave posNew alone
+
+uvec4 pcg4d(uvec4 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+    v ^= v >> 16u;
+    v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+    return v;
+}
+float toUnit(uint r) { return (float(r >> 8) + 0.5) / 16777216.0; }
+
+vec3 gauss3(uint b, uint sd) {
+    uvec4 r = pcg4d(uvec4(b, sd, 0x9E3779B9u, 0x85EBCA6Bu));
+    float u1r = toUnit(r.x), u2r = toUnit(r.y);
+    float u3r = toUnit(r.z), u4r = toUnit(r.w);
+    float m1 = sqrt(-2.0 * log(u1r));
+    float m2 = sqrt(-2.0 * log(u3r));
+    return vec3(m1 * cos(6.2831853 * u2r),
+                m1 * sin(6.2831853 * u2r),
+                m2 * cos(6.2831853 * u4r));
+}
+
+void main() {
+    uint b = gl_GlobalInvocationID.x;
+    if (b >= uint(nBead)) return;
+    int mol = int(b) / nBeads;
+    int k = int(b) % nBeads;
+    int base = mol * (nBeads - 1);
+    vec3 x = pos[b].xyz;
+
+    vec3 F = vec3(0.0);
+    if (k > 0)          F += segF[2 * (base + k - 1) + 1].xyz;
+    if (k < nBeads - 1) F += segF[2 * (base + k)].xyz;
+
+    // harmonic bonds to both chain neighbours
+    if (k < nBeads - 1) {
+        vec3 dv = pos[b + 1].xyz - x;
+        float l = length(dv);
+        if (l > 1e-9) F += kBond * (l - segLen) * (dv / l);
+    }
+    if (k > 0) {
+        vec3 dv = pos[b - 1].xyz - x;
+        float l = length(dv);
+        if (l > 1e-9) F += kBond * (l - segLen) * (dv / l);
+    }
+
+    // discrete-WLC bending: angles centred at j = k-1, k, k+1
+    for (int j = k - 1; j <= k + 1; ++j) {
+        if (j < 1 || j > nBeads - 2) continue;
+        vec3 xm = pos[mol * nBeads + j - 1].xyz;
+        vec3 x0 = pos[mol * nBeads + j].xyz;
+        vec3 xp = pos[mol * nBeads + j + 1].xyz;
+        vec3 d1 = x0 - xm, d2 = xp - x0;
+        float l1 = length(d1), l2 = length(d2);
+        if (l1 < 1e-9 || l2 < 1e-9) continue;
+        vec3 u1 = d1 / l1, u2 = d2 / l2;
+        float c = dot(u1, u2);
+        vec3 gm = -(u2 - c * u1) / l1;      // dc/dx_minus
+        vec3 gp =  (u1 - c * u2) / l2;      // dc/dx_plus
+        vec3 g0 = -(gm + gp);
+        // E = kBend (1 - c)  =>  F = +kBend * dc/dx
+        if (j == k)          F += kBend * g0;
+        else if (j == k - 1) F += kBend * gp;
+        else                 F += kBend * gm;
+    }
+
+    if (pbc == 0) {
+        vec3 over = max(abs(x) - boxHalf, vec3(0.0));
+        F -= sign(x) * over * kWall;
+    }
+
+    if (xlinkK > 0.0) {
+        vec4 xl = xlink[b];
+        for (int s = 0; s < 2; ++s) {
+            int pt = floatBitsToInt(s == 0 ? xl.x : xl.z);
+            if (pt < 0) continue;
+            float rest = s == 0 ? xl.y : xl.w;
+            vec3 dv = pos[pt].xyz - x;
+            if (pbc == 1) {
+                vec3 bs = 2.0 * boxHalf;
+                dv -= bs * round(dv / bs);
+            }
+            float l = length(dv);
+            if (l > 1e-6) F += xlinkK * (l - rest) * dv / l;
+        }
+    }
+
+    beadF[b] = vec4(F, 0.0);
+    if (driftOnly == 1) return;
+
+    vec3 g = gauss3(b, seed);
+    if (lmNoise == 1) g = 0.5 * (g + gauss3(b, seedNext));
+    vec3 disp = sqrt(2.0 * kT * dt / gamma) * g;
+    qPos[b] = dot(disp, disp);
+    posNew[b] = vec4(x + (dt / gamma) * F + disp, 0.0);
+}
