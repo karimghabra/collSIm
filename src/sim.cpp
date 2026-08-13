@@ -817,6 +817,25 @@ void Sim::malaQ(int mode, int n) {
 // U(x) and U(x') must be computed with the same list or their difference is
 // meaningless. The 3 nm Verlet skin covers the ~0.04 nm proposals easily.
 void Sim::stepMala(int nSteps) {
+    // Burn-in is not a measurement, and MALA must not run through it.
+    //
+    // Two reasons. The soft-start ramp makes U explicitly time-dependent, so a
+    // Metropolis ratio between two different targets means nothing. And a dense
+    // restart begins deep in overlap -- 169 molecules at 10 mg/mL in a 200 nm
+    // box start with ~570 hard contacts -- which is precisely the situation
+    // MALA handles worst: every move that would relax the overlap raises U and
+    // is rejected, so acceptance sits at 0.005 and the system crawls out over
+    // thousands of steps instead of relaxing. It looks frozen, because it is.
+    // Relax unadjusted first, then start correcting.
+    if (burnin > 0) {
+        int n = std::min(nSteps, burnin);
+        int saveMala = p.mala;
+        p.mala = 0;
+        stepRigorous(n);          // p.mala == 0, so this will not recurse
+        p.mala = saveMala;
+        nSteps -= n;
+        if (nSteps <= 0) return;
+    }
     float tK = 273.15f + p.tempC;
     float kTeff = p.kT * tK / 310.15f;
     int lmSave = p.lmNoise;

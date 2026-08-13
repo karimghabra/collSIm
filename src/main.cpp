@@ -840,7 +840,9 @@ int main(int argc, char** argv) {
                     // passing computeU() and lastU together reads a stale U
                     double u = sim.computeU();
                     printf(" | U %.1f kT (%.4f/bead)", u, u / sim.nBead());
-                    if (sim.p.mala) printf(" | acc %.3f", sim.malaAccept);
+                    if (sim.p.mala)
+                        printf(sim.burnin > 0 ? " | acc  (burn-in)" : " | acc %.3f",
+                               sim.malaAccept);
                 }
                 printf("\n");
                 fflush(stdout);
@@ -977,7 +979,12 @@ int main(int argc, char** argv) {
                                "is exactly exp(-U/kT) rather than whatever the clamps "
                                "leave behind. Costs roughly 10-100x per nanosecond.");
             ImGui::Checkbox("Metropolis-adjusted (MALA)", (bool*)&sim.p.mala);
-            if (sim.p.mala) {
+            if (sim.p.mala && sim.burnin > 0) {
+                ImGui::TextColored({0.6f, 0.8f, 1.f, 1.f},
+                    "relaxing unadjusted (%d steps left) -- Metropolis is off "
+                    "during\nburn-in: the ramp makes U time-dependent, and MALA "
+                    "cannot relax\nan overlapped start.", sim.burnin);
+            } else if (sim.p.mala) {
                 double a = sim.malaAccept;
                 ImVec4 col = a >= 0.99 ? ImVec4(0.4f, 0.9f, 0.5f, 1.f)
                            : a >= 0.90 ? ImVec4(0.9f, 0.9f, 0.4f, 1.f)
@@ -986,7 +993,13 @@ int main(int argc, char** argv) {
                     a >= 0.99 ? "dt is honest: rejections rare, still dynamics"
                   : a >= 0.90 ? "equilibrium exact, kinetics distorted"
                   : a >= 0.50 ? "sampler only -- do not read rates off this"
-                              : "frozen: lower dt");
+                              : "frozen: lower dt, or relax on tab 1 first");
+                if (a < 0.5 && sim.stats[0] / 2 > 20)
+                    ImGui::TextColored({1.f, 0.4f, 0.3f, 1.f},
+                        "  %u hard overlaps: the configuration is jammed, not the\n"
+                        "  sampler. MALA rejects its way out of an overlap very\n"
+                        "  slowly -- relax it on tab 1 or tab 3, then come back.",
+                        sim.stats[0] / 2);
                 ImGui::TextDisabled("  Equilibrium is exactly exp(-U/kT) at ANY dt. "
                                     "Acceptance is about KINETICS: a rejection freezes\n"
                                     "  the system for a step, which Brownian motion "

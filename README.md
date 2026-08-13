@@ -429,6 +429,25 @@ Neither shows up as an instability or a visibly wrong trajectory. They show up
 as slightly wrong angle statistics -- which is exactly what `--equipart` below
 measures, and why this tab shipped unadjusted rather than unmeasured.
 
+### Burn-in is not a measurement
+
+MALA does not run during the soft-start ramp, and this is load-bearing rather
+than tidy. Two reasons. The ramp makes `U` explicitly time-dependent, so a
+Metropolis ratio between two different targets is meaningless. And a dense
+restart begins deep in overlap -- 169 molecules at 10 mg/mL in a 200 nm box
+start with ~570 hard contacts -- which is the one situation MALA handles worst:
+every move that would relax an overlap raises `U` and is rejected, so
+acceptance sits at 0.005 and the system crawls out over thousands of steps.
+On screen that is indistinguishable from a hang.
+
+The engine therefore relaxes unadjusted until the ramp finishes, then starts
+correcting. Measured at that condition after the fix: overlaps clear 231 -> 4
+and acceptance settles at ~0.54. The UI reports burn-in explicitly rather than
+showing a meaningless acceptance of 1.000, and warns when low acceptance is
+accompanied by many hard overlaps -- because then the configuration is jammed,
+not the sampler, and the fix is to relax it on another tab rather than to lower
+dt.
+
 ### Does either engine sample what it claims? (`--equipart`)
 
 With pair interactions off, `U` is bonds + bending only. In bond-vector
