@@ -5,3 +5,8 @@ pmf_data/pose_tmp.pdb
 __pycache__/
 *.pyc
 imgui.ini
+
+# modcoll (Python package for the modified-collagen study)
+.venv/
+.pytest_cache/
+results/modcoll/**/raw/
