@@ -1,0 +1,52 @@
+{
+  "by_pka_set": {
+    "recommended": {
+      "fully_succinylated_net_charge_pH4.2": 16.31861770466744,
+      "fully_succinylated_pI": 4.2880853941575925,
+      "native_net_charge_pH4.2": 159.04163176188013,
+      "native_pI": 9.841738937718603
+    },
+    "repository": {
+      "fully_succinylated_net_charge_pH4.2": 1.519108713919155,
+      "fully_succinylated_pI": 4.20867824091968,
+      "native_net_charge_pH4.2": 144.2421402358884,
+      "native_pI": 10.106907694256115
+    }
+  },
+  "deamidated_fraction_giving_pI_9": 0.18488217009816485,
+  "f_deam_background": 0.0,
+  "fully_succinylated_pI": 4.2880853941575925,
+  "fully_succinylated_pI_in_4.0_4.6": true,
+  "hydrophobicity_self_r_at_D": 0.11673300077365939,
+  "hydrophobicity_self_z_vs_other_lags": 2.921318492242678,
+  "molecules_per_point": 256,
+  "native_pI": 9.841738937718603,
+  "native_pI_near_9": false,
+  "native_site_counts": {
+    "ARG": 161,
+    "ASN": 46,
+    "ASP": 92,
+    "CTERM": 3,
+    "GLN": 79,
+    "GLU": 143,
+    "HIS": 18,
+    "LYS": 107,
+    "OTHER": 2495,
+    "TYR": 13
+  },
+  "pKa": {
+    "ARG": 13.8,
+    "ASP": 3.9,
+    "CTERM": 3.7,
+    "GLU": 4.3,
+    "HIS": 6.5,
+    "LYS": 10.4,
+    "NTERM": 8.0,
+    "SUCC_LYS": 4.5,
+    "SUCC_NTERM": 4.5,
+    "TYR": 9.8
+  },
+  "pka_set": "recommended",
+  "seed": 20261112,
+  "telopeptides": "mature"
+}
