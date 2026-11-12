@@ -378,7 +378,83 @@ angular half-widths, the water and atom contact radii, the outer-shell
 half-width, the outer contact distance of sulfate, the charge layout of
 sulfate, and the cylinder wall radii.
 
-S3_PLACEHOLDER
+
+
+## S3 results (`results/modcoll/ions/`)
+
+Produced by `python -m modcoll.ions.validate_s3` (seed 20261112); the numbers
+behind every figure are in the two JSON files next to them.
+
+**Single pairs.** `s3_binding_table.md` and `s3_binding_constants.png` give the
+table above and the checks. Geometry from Monte Carlo of one ion and one ligand
+at I = 0.1 M (`s3_distances.png`):
+
+| | Model | Reference |
+|---|---|---|
+| Ca-O, inner sphere | 0.243 +- 0.012 nm | 0.236-0.246 nm |
+| Mg-O, inner sphere | 0.207 +- 0.005 nm | 0.207 nm |
+| Ca to outer-sphere O | 0.463 nm | 0.458 nm (second shell) |
+| Mg to outer-sphere O | 0.426 nm | 0.41-0.43 nm |
+| rms angle off the site axis, Ca / Mg | 19 deg / 7 deg | working tolerances 15-20 / 5-10 deg |
+| bidentate bite O-Ca-O | 52.5 deg | 52-54 deg in crystals |
+| S...N in a direct sulfate-guanidinium pair | 0.379 +- 0.041 nm | S to C-zeta 0.40 nm computed for the fork |
+
+The distances are close to what was put in; the angular spreads and the bite
+angle were not put in. Direct sulfate-guanidinium pairs hold two nitrogens
+(the fork) more often than one, 58% of the time.
+
+`s3_inner_outer.png`: inner-sphere shares from the quadrature at I = 0 with the
+Monte Carlo shares at I = 0.1 M marked (22% and 20% inner for Ca2+ and Mg2+).
+The bidentate share in that particular Monte Carlo run rests on a few hundred
+samples and is not to be read off the table; the test suite compares it with
+the quadrature in a longer run.
+
+**Two facing rows** (`s3_bridges_vs_gap.png`, `s3_bridge_kinds.png`). Eight
+groups per row, 0.86 nm apart, on the facing sides of two excluded cylinders;
+periodic along the rows; I = 0.1 M; bath 1, 5, 20, 50 mM. Carboxylate rows are
+protonated at random for pH 4.2 and pKa 4.3 (44% charged), four independent
+patterns per point; guanidinium rows are fully charged. The gap is the distance
+between the two layers of partner atoms. Counts are bridges per facing pair of
+groups.
+
+- *Cations bridge mostly through water.* At 50 mM there are about 0.2 bridges
+  per facing pair from 0.35 to 0.65 nm and 0.11-0.13 out to 0.9 nm, falling to
+  zero by 1.0 nm (Ca2+) and 0.95 nm (Mg2+). Nearly all are outer-outer. At 5 mM
+  the count is 0.05-0.10. For scale, only 19% of facing pairs have both groups
+  charged at this pH, so at 50 mM there are about as many bridges as doubly
+  charged facing pairs; a quarter to a third of the bridging ions touch three
+  or more groups.
+- *Inner-outer bridges* appear in a window: up to 0.08 per pair for Ca2+ at
+  0.60-0.65 nm, up to 0.04 for Mg2+ at 0.55 nm.
+- *Inner-inner bridges* were seen for Ca2+ only, at 0.35 and 0.45 nm, as the
+  doubly bidentate state: 0.03 per pair on average with individual runs between
+  0 and 0.12. This is the unconverged state described under *Known limits*;
+  the number is not a result.
+- *Ca2+ and Mg2+ are alike* within the pattern-to-pattern scatter (the bands in
+  the figure, about +-25%). The model does not reproduce "calcium bridges
+  directly and short, magnesium through its water shell and long": with the
+  measured single-contact affinities both ions bridge through their water
+  shells, Mg2+ slightly more and over a slightly shorter range. Calcium's
+  distinct behaviour is confined to the short-gap doubly chelated state, which
+  this work cannot quantify.
+- *Sulfate between guanidinium rows* bridges more: 0.3-0.75 per facing pair at
+  50 mM, with peaks at 0.45-0.55 nm and at 0.75 nm. At 0.75 nm over half of the
+  bridges are held by two hydrogen bonds on each side and nearly all involve
+  exactly two guanidinium groups; at 0.45-0.55 nm most involve three or four
+  groups, neighbours along the row included. Turning one row's guanidinium
+  planes by 90 deg changes little at 0.75 nm but at 0.40-0.50 nm removes most
+  of the direct-direct bridges (0.01-0.11 per pair against 0.37-0.64) while
+  the total falls by less than half: bridging is selective in the gap and, at
+  short gaps, in the mutual orientation of the two arginines. All of this scales with the estimated sulfate-donor
+  constants; if those are off by a factor of three so is the bridging.
+- *Lifetimes* of bridges at 50 mM are 130-550 sweeps for the cations and
+  75-930 for sulfate (longest at the 0.75 nm peak). See the caveat on what a
+  sweep is.
+
+The rows are a demonstration of the machinery, not a model of two collagen
+molecules: the spacing, the facing registry and the cylinder radius are
+arbitrary, and both rows carry the same sign of charge with no opposing
+charges nearby.
 
 ## Known limits
 
@@ -408,11 +484,13 @@ S3_PLACEHOLDER
 - **Doubly chelated calcium is not converged.** Where two carboxylates of
   different molecules face each other with their oxygen layers closer than
   about 0.46 nm, a Ca2+ can be held bidentate by both: four oxygens through two
-  sites. In this model that state lies roughly 12-14 kT below the outer-sphere
-  states and is very narrow. Identical runs of eight million moves on one
-  facing pair at 0.42 nm put between 3% and 38% of the time in it; the
-  quadrature, itself noisy there, puts its weight near that of all other
-  inner-sphere states together. Inner-inner calcium counts at gaps below
+  sites. In this model that state lies of order 10-15 kT below the outer-sphere
+  states and is very narrow. Runs of eight million moves on one facing pair at
+  0.42 nm, differing only in seed, spent 3%, 10%, 34% and 38% of the time in
+  it; the quadrature there gives a multidentate-to-monodentate ratio of 1.9
+  with four million samples and 3.6 with forty million. At 0.48 nm, where the
+  state is nearly out of reach, sampler and quadrature agree (0.70 against
+  0.68). Inner-inner calcium counts at gaps below
   0.46 nm are therefore unconverged in everything reported here, and the depth
   of the state is an extrapolation: it assumes four contacts are worth four
   times one, which the succinate check suggests is too generous. Mg2+ cannot
@@ -444,7 +522,7 @@ S3_PLACEHOLDER
 ```
 python3 -m venv --without-pip .venv        # or any environment with pip
 .venv/bin/python -m pip install -r modcoll/ions/requirements.txt
-.venv/bin/python -m pytest tests/modcoll -q          # about four minutes
+.venv/bin/python -m pytest tests/modcoll -q          # about fifteen minutes
 .venv/bin/python -m modcoll.ions.calibrate           # model against targets
 .venv/bin/python -m modcoll.ions.calibrate --write   # refit after editing params.toml
 .venv/bin/python -m modcoll.ions.validate_s3         # S3 tables and figures

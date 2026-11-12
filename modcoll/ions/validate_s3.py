@@ -1,7 +1,8 @@
 """S3: single ion-site validation and the two-row bridging demonstration.
 
-    python -m modcoll.ions.validate_s3            # full run, about 15 minutes on 8 cores
-    python -m modcoll.ions.validate_s3 --quick    # smoke run, about one minute
+    python -m modcoll.ions.validate_s3            # full run, about 35 minutes on 9 cores
+    python -m modcoll.ions.validate_s3 --quick    # smoke run, about three minutes
+    python -m modcoll.ions.validate_s3 --replot   # redraw figures from the saved numbers
 
 Writes to results/modcoll/ions/:
 
@@ -313,9 +314,10 @@ def fig_binding(rows, check_rows, path):
         col = C_ION.get(species, INK2)
         ax2.plot([c["lo"], c["hi"]], [yy, yy], color=INK, lw=5, solid_capstyle="butt", alpha=0.85, zorder=2)
         models = [(k[12:].strip("_") or "", v) for k, v in c.items() if k.startswith("log_K_total")]
-        for tag, v in models:
+        for m, (tag, v) in enumerate(models):
             ax2.plot([v], [yy], marker="o", ms=8, color=col, mec=SURFACE, mew=1.5, ls="none", zorder=4)
-            ax2.annotate(f"{v:.2f}" + (f" {tag}" if tag else ""), (v, yy), xytext=(0, 9),
+            # two models on one row: label one above and one below the dot
+            ax2.annotate(f"{v:.2f}" + (f" {tag}" if tag else ""), (v, yy), xytext=(0, 9 if m == 0 else -16),
                          textcoords="offset points", ha="center", fontsize=8, color=INK2)
         ligand = {"acetate": "acetate", "sulfate": "SO$_4^{2-}$", "succinate": "succinate$^{2-}$"}[name.split("_")[1]]
         labels.append(f"{ION_LABEL[species]} + {ligand}, I = {c['ionic_strength']:g}")
@@ -538,6 +540,7 @@ def write_markdown(rows, cf, mc, check_rows, path):
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="S3 validation of the explicit-ion model")
     ap.add_argument("--quick", action="store_true", help="short smoke run")
+    ap.add_argument("--replot", action="store_true", help="redraw the figures from the JSON files in --out")
     ap.add_argument("--seed", type=int, default=20261112)
     ap.add_argument("--workers", type=int, default=min(8, mp.cpu_count()))
     ap.add_argument("--out", type=Path, default=OUT_DIR)
@@ -548,6 +551,17 @@ def main(argv=None) -> int:
     matplotlib.use("Agg")
     params = load_params()
     quick = args.quick
+    if args.replot:
+        table = json.loads((args.out / "s3_binding_table.json").read_text(encoding="utf-8"))
+        bridges = json.loads((args.out / "s3_bridges.json").read_text(encoding="utf-8"))
+        agg = bridges["aggregated"]
+        fig_binding(table["pairs"], table["not_fitted_checks"], args.out / "s3_binding_constants.png")
+        fig_inner_outer(table["pairs"], table["single_pair_monte_carlo"], args.out / "s3_inner_outer.png")
+        fig_distances(table["single_pair_monte_carlo"], params, args.out / "s3_distances.png")
+        fig_bridges(agg, args.out / "s3_bridges_vs_gap.png")
+        fig_bridge_kinds(agg, max(a["conc"] for a in agg), args.out / "s3_bridge_kinds.png")
+        print(f"redrew figures in {args.out}")
+        return 0
 
     n_int = 200_000 if quick else 2_000_000
     rows = binding_table(params, args.seed, n_int)
