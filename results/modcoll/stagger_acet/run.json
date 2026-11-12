@@ -1,0 +1,246 @@
+{
+  "chemistry": "acet",
+  "d_period_nm": 66.88326336721869,
+  "f": [
+    0.0,
+    0.25,
+    0.5,
+    0.75,
+    0.9,
+    1.0
+  ],
+  "f_deam": 0.0,
+  "helix_length_nm": 290.3653265680308,
+  "ionic_mM": [
+    10.0,
+    50.0,
+    150.0,
+    300.0
+  ],
+  "n_sites": 3157,
+  "native_control_with_result_pka_set": {
+    "azimuth_mean_minima": [
+      {
+        "energy_kT": -17.239065905504756,
+        "near_multiple": true,
+        "nearest_multiple": 1,
+        "offset_D": 0.007725948268166946,
+        "stagger_D": 1.0077259482681669,
+        "stagger_nm": 67.4
+      },
+      {
+        "energy_kT": -10.406931902553577,
+        "near_multiple": true,
+        "nearest_multiple": 2,
+        "offset_D": -0.014450950593285302,
+        "stagger_D": 1.9855490494067147,
+        "stagger_nm": 132.8
+      },
+      {
+        "energy_kT": -9.181564692222228,
+        "near_multiple": true,
+        "nearest_multiple": 3,
+        "offset_D": -0.0037347176121566065,
+        "stagger_D": 2.9962652823878435,
+        "stagger_nm": 200.4
+      },
+      {
+        "energy_kT": -7.095779921303077,
+        "near_multiple": false,
+        "nearest_multiple": 1,
+        "offset_D": -0.37503049499095875,
+        "stagger_D": 0.6249695050090412,
+        "stagger_nm": 41.800000000000004
+      },
+      {
+        "energy_kT": -6.702768951331235,
+        "near_multiple": false,
+        "nearest_multiple": 1,
+        "offset_D": 0.30974470427732087,
+        "stagger_D": 1.309744704277321,
+        "stagger_nm": 87.60000000000001
+      }
+    ],
+    "azimuth_mean_top3_near_multiples": true,
+    "deepest_min_over_angles_near_multiple": true,
+    "min_over_angles_minima": [
+      {
+        "energy_kT": -24.989907275710696,
+        "near_multiple": true,
+        "nearest_multiple": 1,
+        "offset_D": 0.007725948268166946,
+        "stagger_D": 1.0077259482681669,
+        "stagger_nm": 67.4
+      },
+      {
+        "energy_kT": -18.097776823758565,
+        "near_multiple": false,
+        "nearest_multiple": 1,
+        "offset_D": 0.3067544195643589,
+        "stagger_D": 1.3067544195643588,
+        "stagger_nm": 87.4
+      },
+      {
+        "energy_kT": -16.481918291022595,
+        "near_multiple": false,
+        "nearest_multiple": 0,
+        "offset_D": 0.4306009986665164,
+        "stagger_D": 0.4306009986665164,
+        "stagger_nm": 28.8
+      },
+      {
+        "energy_kT": -15.887325285088501,
+        "near_multiple": true,
+        "nearest_multiple": 2,
+        "offset_D": -0.008470381167361379,
+        "stagger_D": 1.9915296188326386,
+        "stagger_nm": 133.20000000000002
+      },
+      {
+        "energy_kT": -15.207920745235569,
+        "near_multiple": true,
+        "nearest_multiple": 3,
+        "offset_D": -0.0037347176121566065,
+        "stagger_D": 2.9962652823878435,
+        "stagger_nm": 200.4
+      }
+    ],
+    "min_over_angles_top5_near_multiples": 3,
+    "passed": true,
+    "pka_set": "recommended",
+    "tolerance_D": 0.05
+  },
+  "native_gate": {
+    "azimuth_mean_minima": [
+      {
+        "energy_kT": -17.30398379126277,
+        "near_multiple": true,
+        "nearest_multiple": 1,
+        "offset_D": 0.007725948268166946,
+        "stagger_D": 1.0077259482681669,
+        "stagger_nm": 67.4
+      },
+      {
+        "energy_kT": -10.39900160692572,
+        "near_multiple": true,
+        "nearest_multiple": 2,
+        "offset_D": -0.014450950593285302,
+        "stagger_D": 1.9855490494067147,
+        "stagger_nm": 132.8
+      },
+      {
+        "energy_kT": -9.260231860649947,
+        "near_multiple": true,
+        "nearest_multiple": 3,
+        "offset_D": -0.0037347176121566065,
+        "stagger_D": 2.9962652823878435,
+        "stagger_nm": 200.4
+      },
+      {
+        "energy_kT": -7.141088421990972,
+        "near_multiple": false,
+        "nearest_multiple": 1,
+        "offset_D": -0.37503049499095875,
+        "stagger_D": 0.6249695050090412,
+        "stagger_nm": 41.800000000000004
+      },
+      {
+        "energy_kT": -6.744497446870296,
+        "near_multiple": false,
+        "nearest_multiple": 1,
+        "offset_D": 0.30974470427732087,
+        "stagger_D": 1.309744704277321,
+        "stagger_nm": 87.60000000000001
+      }
+    ],
+    "azimuth_mean_top3_near_multiples": true,
+    "deepest_min_over_angles_near_multiple": true,
+    "min_over_angles_minima": [
+      {
+        "energy_kT": -25.048086947222252,
+        "near_multiple": true,
+        "nearest_multiple": 1,
+        "offset_D": 0.007725948268166946,
+        "stagger_D": 1.0077259482681669,
+        "stagger_nm": 67.4
+      },
+      {
+        "energy_kT": -18.12814318011617,
+        "near_multiple": false,
+        "nearest_multiple": 1,
+        "offset_D": 0.3067544195643589,
+        "stagger_D": 1.3067544195643588,
+        "stagger_nm": 87.4
+      },
+      {
+        "energy_kT": -16.43533232651751,
+        "near_multiple": false,
+        "nearest_multiple": 0,
+        "offset_D": 0.4306009986665164,
+        "stagger_D": 0.4306009986665164,
+        "stagger_nm": 28.8
+      },
+      {
+        "energy_kT": -15.9175671461218,
+        "near_multiple": true,
+        "nearest_multiple": 2,
+        "offset_D": -0.008470381167361379,
+        "stagger_D": 1.9915296188326386,
+        "stagger_nm": 133.20000000000002
+      },
+      {
+        "energy_kT": -15.276606278809826,
+        "near_multiple": true,
+        "nearest_multiple": 3,
+        "offset_D": -0.0037347176121566065,
+        "stagger_D": 2.9962652823878435,
+        "stagger_nm": 200.4
+      }
+    ],
+    "min_over_angles_top5_near_multiples": 3,
+    "passed": true,
+    "pka_set": "repository",
+    "tolerance_D": 0.05
+  },
+  "orientations": [
+    "parallel",
+    "antiparallel"
+  ],
+  "pH": [
+    3.5,
+    4.2,
+    5.0,
+    7.4
+  ],
+  "pKa": {
+    "ARG": 13.8,
+    "ASP": 3.9,
+    "CTERM": 3.7,
+    "GLU": 4.3,
+    "HIS": 6.5,
+    "LYS": 10.4,
+    "NTERM": 8.0,
+    "SUCC_LYS": 4.5,
+    "SUCC_NTERM": 4.5,
+    "TYR": 9.8
+  },
+  "pairs": 64,
+  "pka_set": "recommended",
+  "seed": 20261112,
+  "settings": {
+    "axis_separation_nm": 1.65,
+    "bjerrum_nm": 0.71,
+    "charge_position": "centroid",
+    "eps_hydrophobic_kT": 0.05,
+    "facing_angles": 24,
+    "hydrophobic_sigma_nm": 0.5,
+    "lag_min_nm": 5.0,
+    "soft_core_nm": 0.35,
+    "stagger_step_nm": 0.2,
+    "surface_separation_nm": 0.15,
+    "window_nm": 3.0
+  },
+  "task": "S2 two-molecule stagger scan",
+  "telopeptides": "mature",
+  "weights": "uniform"
+}
