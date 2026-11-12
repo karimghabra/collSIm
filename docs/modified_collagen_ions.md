@@ -522,7 +522,7 @@ charges nearby.
 ```
 python3 -m venv --without-pip .venv        # or any environment with pip
 .venv/bin/python -m pip install -r modcoll/ions/requirements.txt
-.venv/bin/python -m pytest tests/modcoll -q          # about fifteen minutes
+.venv/bin/python -m pytest tests/modcoll -q          # about ten minutes
 .venv/bin/python -m modcoll.ions.calibrate           # model against targets
 .venv/bin/python -m modcoll.ions.calibrate --write   # refit after editing params.toml
 .venv/bin/python -m modcoll.ions.validate_s3         # S3 tables and figures
