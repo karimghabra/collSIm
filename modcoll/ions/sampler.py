@@ -32,7 +32,9 @@ rotate     orientation composed with a rotation about a uniformly random axis
            by an angle uniform in [-a, a] (symmetric), a being the full step
            or a fifth of it; with a small probability a fresh Haar-uniform
            orientation instead.
-flip       one site, chosen uniformly, changes state W <-> L (symmetric).
+flip       one site, chosen uniformly, changes state W <-> L; half the time
+           together with a displacement and rotation drawn as in translate
+           and rotate (symmetric either way).
 dock       for a site k in state W: choose a ligand atom j uniformly among the
            C dockable atoms within R_nb of the centre; draw a Haar-uniform
            orientation and a point xi uniform in a ball of radius rho; put site
@@ -491,6 +493,16 @@ def sweep_kernel(T, E, S, I, counters, zeta, moves, steps, dock_rho, stats, rng,
                 else:
                     st_new[k] = W_STATE
                     nw_new += 1
+                if rng.random() < 0.5:
+                    # half the flips come with a rigid displacement and rotation
+                    # drawn as in the translate and rotate moves. The combined
+                    # proposal is still symmetric. It lets an ion that already
+                    # holds one ligand swing a second site onto another while
+                    # that site opens, which no other move can do in one step.
+                    for a in range(3):
+                        r_new[a] += (2.0 * rng.random() - 1.0) * d_tr
+                    _small_rotation(rng, I.quat[i], a_rot, q_new)
+                    ok = _wrap(S, r_new)
             else:
                 k = int(rng.integers(0, ns))
                 d = T.d_site[sp]

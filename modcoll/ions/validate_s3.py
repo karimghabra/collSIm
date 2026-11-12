@@ -190,6 +190,7 @@ def row_run(args):
     n_samples = n_sweeps // stride
     counts = {"inner-inner": [], "inner-outer": [], "outer-outer": []}
     by_ligands = {2: 0, 3: 0, 4: 0}      # bridges whose ion holds 2, 3, >= 4 protein groups
+    both_bidentate = 0                   # two inner contacts on each side (fork-fork for sulfate)
     spans, z_all = [], []
     n_ions = []
     for _ in range(n_samples):
@@ -200,6 +201,8 @@ def row_run(args):
         for b in bridges:
             tally[b.kind] += 1
             by_ligands[min(b.n_ligands, 4)] += 1
+            if b.denticity_a >= 2 and b.denticity_b >= 2:
+                both_bidentate += 1
             spans.append(b.span)
             z_all.append(b.z)
         for k in counts:
@@ -216,6 +219,7 @@ def row_run(args):
         "bridges_per_pair_block_se": float(blocks.std(ddof=1) / math.sqrt(10) / ROW_GROUPS),
         "by_kind_per_pair": {k: float(np.mean(v) / ROW_GROUPS) for k, v in counts.items()},
         "by_ligands_per_pair": {str(k): v / n_samples / ROW_GROUPS for k, v in by_ligands.items()},
+        "both_bidentate_per_pair": both_bidentate / n_samples / ROW_GROUPS,
         "mean_span": float(np.mean(spans)) if spans else None,
         "mean_lifetime_sweeps": float(life.mean()) if len(life) else None,
         "n_bridge_events": int(len(life)),
@@ -245,6 +249,9 @@ def aggregate_rows(results: list[dict]) -> list[dict]:
                                  for k in ("inner-inner", "inner-outer", "outer-outer")},
             "by_ligands_per_pair": {k: float(np.mean([r["by_ligands_per_pair"][k] for r in rs]))
                                     for k in ("2", "3", "4")},
+            "both_bidentate_per_pair": float(np.mean([r["both_bidentate_per_pair"] for r in rs])),
+            "inner_inner_min_max": [float(min(r["by_kind_per_pair"]["inner-inner"] for r in rs)),
+                                    float(max(r["by_kind_per_pair"]["inner-inner"] for r in rs))],
             "mean_span": float(np.mean(spans)) if spans else None,
             "mean_lifetime_sweeps": float(np.mean(lifes)) if lifes else None,
             "n_patterns": len(rs),
@@ -277,10 +284,11 @@ PAIR_LABEL = {
 }
 
 
-def fig_binding(rows, path):
+def fig_binding(rows, check_rows, path):
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(7.6, 3.9), facecolor=SURFACE)
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(12.4, 3.9), facecolor=SURFACE,
+                                  gridspec_kw={"width_ratios": [1.0, 1.0]})
     names = [r["pair"] for r in rows][::-1]
     y = np.arange(len(names))
     for yi, name in zip(y, names):
@@ -293,11 +301,32 @@ def fig_binding(rows, path):
                     ha="center", fontsize=8.5, color=INK2)
     ax.set_yticks(y, [PAIR_LABEL[n] for n in names])
     ax.tick_params(axis="y", labelcolor=INK)
-    ax.set_xlabel("log$_{10}$ K$_{total}$ (L/mol) at the target's ionic strength")
-    ax.set_title("Association constants: model (dot) against target (bar)", fontsize=11, loc="left")
+    ax.set_xlabel("log$_{10}$ K$_{total}$ (L/mol), I = 0")
+    ax.set_title("Fitted: model (dot) on target (bar)", fontsize=11, loc="left")
     ax.set_ylim(-0.6, len(names) - 0.3)
     _style(ax, "x")
-    handles = [plt.Line2D([], [], marker="|", ms=12, mew=2.2, color=INK, ls="none", label="target"),
+
+    labels, yy = [], 0
+    for c in check_rows[::-1]:
+        name, key = c["check"].split(".")
+        species = name.split("_")[0]
+        col = C_ION.get(species, INK2)
+        ax2.plot([c["lo"], c["hi"]], [yy, yy], color=INK, lw=5, solid_capstyle="butt", alpha=0.85, zorder=2)
+        models = [(k[12:].strip("_") or "", v) for k, v in c.items() if k.startswith("log_K_total")]
+        for tag, v in models:
+            ax2.plot([v], [yy], marker="o", ms=8, color=col, mec=SURFACE, mew=1.5, ls="none", zorder=4)
+            ax2.annotate(f"{v:.2f}" + (f" {tag}" if tag else ""), (v, yy), xytext=(0, 9),
+                         textcoords="offset points", ha="center", fontsize=8, color=INK2)
+        ligand = {"acetate": "acetate", "sulfate": "SO$_4^{2-}$", "succinate": "succinate$^{2-}$"}[name.split("_")[1]]
+        labels.append(f"{ION_LABEL[species]} + {ligand}, I = {c['ionic_strength']:g}")
+        yy += 1
+    ax2.set_yticks(np.arange(len(labels)), labels)
+    ax2.tick_params(axis="y", labelcolor=INK)
+    ax2.set_ylim(-0.6, len(labels) - 0.3)
+    ax2.set_xlabel("log$_{10}$ K$_{total}$ (L/mol)")
+    ax2.set_title("Not fitted: model (dot) against measured range (bar)", fontsize=11, loc="left")
+    _style(ax2, "x")
+    handles = [plt.Line2D([], [], marker="|", ms=12, mew=2.2, color=INK, ls="none", label="target / measured"),
                plt.Line2D([], [], marker="o", ms=7, color=INK2, mec=SURFACE, ls="none", label="model")]
     ax.legend(handles=handles, frameon=False, fontsize=9, loc="lower right", labelcolor=INK2)
     fig.tight_layout()
@@ -440,6 +469,15 @@ def fig_bridge_kinds(agg, conc, path):
         for k, marker in (("inner-inner", "o"), ("inner-outer", "s"), ("outer-outer", "^")):
             ax.plot(x, [a["by_kind_per_pair"][k] for a in sel], color=C_KIND[k], lw=2.0, marker=marker,
                     ms=5, mec=SURFACE, mew=0.8, label=k)
+        # of the inner-inner bridges, those with two inner contacts on both sides
+        ax.plot(x, [a["both_bidentate_per_pair"] for a in sel], color=INK, lw=1.2, ls=(0, (3, 2)),
+                label="two contacts on each side")
+        if species == "Ca":
+            # run-to-run range of the inner-inner count: the doubly bidentate
+            # state is a deep trap and is not converged at short gaps
+            lo = [a["inner_inner_min_max"][0] for a in sel]
+            hi = [a["inner_inner_min_max"][1] for a in sel]
+            ax.fill_between(x, lo, hi, color=C_KIND["inner-inner"], alpha=0.22, lw=0)
         ax.set_title(title, fontsize=10, loc="left")
         ax.set_xlabel("gap between the two rows (nm)")
         ax.set_ylim(bottom=0)
@@ -447,7 +485,8 @@ def fig_bridge_kinds(agg, conc, path):
     axes[0].set_ylabel("bridges per facing pair of groups")
     axes[0].legend(frameon=False, fontsize=8, labelcolor=INK2)
     fig.suptitle(f"Bridges by contact class on each side, bath {1000 * conc:g} mM "
-                 "(for sulfate, 'inner' = direct hydrogen bond)", fontsize=11, color=INK, x=0.01, ha="left")
+                 "(for sulfate, 'inner' = direct hydrogen bond; blue band = range over runs)",
+                 fontsize=11, color=INK, x=0.01, ha="left")
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     fig.savefig(path, dpi=160)
     plt.close(fig)
@@ -548,7 +587,7 @@ def main(argv=None) -> int:
          "ionic_strength": ROW_IONIC_STRENGTH, "pH": ROW_PH,
          "pKa": float(params.value("constants.carboxyl_pKa")),
          "aggregated": agg, "runs": row_results}, indent=1), encoding="utf-8")
-    fig_binding(rows, args.out / "s3_binding_constants.png")
+    fig_binding(rows, check_rows, args.out / "s3_binding_constants.png")
     fig_inner_outer(rows, mc, args.out / "s3_inner_outer.png")
     fig_distances(mc, params, args.out / "s3_distances.png")
     fig_bridges(agg, args.out / "s3_bridges_vs_gap.png")

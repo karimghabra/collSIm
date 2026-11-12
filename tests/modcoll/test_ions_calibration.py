@@ -255,12 +255,12 @@ def test_succinate_conformers_have_the_textbook_chain_geometry(params):
     for lig in (ext, gau):
         assert lig.charge.sum() == pytest.approx(-2.0)
         assert sorted(set(lig.group.tolist())) == [0, 1]
-        c = lig.pos[lig.type == inert]
+        c = lig.pos[lig.type == inert][[0, 2, 3, 1]]          # stored as C1, C4, C2, C3
         assert np.allclose(np.linalg.norm(np.diff(c, axis=0), axis=1), 0.153)
-    c = ext.pos[ext.type == inert]
+    c = ext.pos[ext.type == inert][[0, 2, 3, 1]]
     expected = 0.153 * math.sqrt(1 + 8 * math.sin(math.radians(56.0)) ** 2)
     assert np.linalg.norm(c[0] - c[3]) == pytest.approx(expected, rel=1e-9)
-    cg = gau.pos[gau.type == inert]
+    cg = gau.pos[gau.type == inert][[0, 2, 3, 1]]
     assert np.linalg.norm(cg[0] - cg[3]) < np.linalg.norm(c[0] - c[3]) - 0.05
     # each carboxylate keeps its own geometry
     o = ext.pos[ext.type == O_CARB]

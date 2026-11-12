@@ -57,11 +57,15 @@ the whole interface to the site model. Types and charges:
 
 | Group | Atoms | Charge |
 |---|---|---|
-| carboxylate (Asp, Glu, succinyl-Lys, C-terminus) | two O, 0.222 nm apart | -1/2 each |
-| carboxylic acid (protonated) | two O | 0; not a ligand |
-| guanidinium (Arg) | three coplanar N, 0.230 nm apart | +1/3 each |
+| carboxylate (Asp, Glu, succinyl-Lys, C-terminus) | two O, 0.222 nm apart, and the carbon | -1/2 per O |
+| carboxylic acid (protonated) | two O and the carbon | 0; not a ligand |
+| guanidinium (Arg) | three coplanar N, 0.230 nm apart, and the carbon | +1/3 per N |
 | ammonium (unmodified Lys) | one N | +1 |
 | imidazolium (His) | two N, 0.22 nm apart | +1/2 each |
+
+The carbon of a carboxylate or guanidinium is an uncharged, excluded-volume
+atom. It keeps an ion from sitting between the oxygens closer than a real one
+can, and the contact energies were calibrated with it in place.
 
 `place_on_surface(s, phi, rho, kinds, mol)` puts one group per site on a
 cylinder using the axial and azimuthal coordinates of
@@ -233,8 +237,14 @@ below c N_A at 20-50 mM.
 
 Moves, each satisfying detailed balance on its own:
 
-- **translate**, **rotate**: symmetric proposals.
-- **flip**: one site W <-> L, symmetric.
+- **translate**, **rotate**: symmetric proposals, each drawn at the full step or
+  a fifth of it. An ion in a contact well a few hundredths of a nanometre wide
+  and one in the bulk need different step sizes; with a single size the
+  bidentate calcium state was entered and left so rarely that its population
+  was wrong by a factor of two in runs of five million moves.
+- **flip**: one site W <-> L, symmetric; half the time together with a
+  translate-and-rotate displacement, so that an ion holding one ligand can
+  swing a second site onto another ligand as that site opens.
 - **dock / undock**: the pair that connects outer and inner sphere. A hydrated
   site cannot admit a ligand (its water is in the way) and an open empty site
   costs dG_des, so with local moves alone the inner sphere of Mg2+ would be
@@ -317,7 +327,7 @@ calcium binding directly and magnesium through its water shell. In the model
 the tight hexahydrate of Mg2+ (dG_des 16 kT against 6) is offset by a contact
 energy larger by nearly the same amount (eps_in 20.7 against 8.2; net 4.7
 against 2.2 kT). If Mg2+ gained only as much on contact as Ca2+ does, its
-inner-sphere share with acetate would be about 1e-5: the hydration-shell
+inner-sphere share with acetate would be about 3e-6: the hydration-shell
 argument, taken alone, predicts an ion that is never inner-sphere, and the
 Raman data say otherwise. The magnesium target is disputed (another
 spectroscopic reading gives about 6% contact pairs instead of 21%); the low end
@@ -395,6 +405,22 @@ S3_PLACEHOLDER
   outcome, and the longer Ca-O bonds of bidentate carboxylate (0.25-0.28 nm)
   are represented only by the width of the radial well: a bidentate oxygen
   sits at 0.238 nm here.
+- **Doubly chelated calcium is not converged.** Where two carboxylates of
+  different molecules face each other with their oxygen layers closer than
+  about 0.46 nm, a Ca2+ can be held bidentate by both: four oxygens through two
+  sites. In this model that state lies roughly 12-14 kT below the outer-sphere
+  states and is very narrow. Identical runs of eight million moves on one
+  facing pair at 0.42 nm put between 3% and 38% of the time in it; the
+  quadrature, itself noisy there, puts its weight near that of all other
+  inner-sphere states together. Inner-inner calcium counts at gaps below
+  0.46 nm are therefore unconverged in everything reported here, and the depth
+  of the state is an extrapolation: it assumes four contacts are worth four
+  times one, which the succinate check suggests is too generous. Mg2+ cannot
+  form it (no bidentate binding) and its singly bonded inner-inner bridges are
+  rarer still and are essentially never visited: with a 16 kT site-opening cost
+  only the dock/undock pair opens Mg2+ sites, and it places one site at a time.
+  The pair-level work will need a move that docks a second site while the
+  first stays put, or tempering in the contact energy.
 - **Quenched protonation.** Each carboxylate is protonated or not, drawn once.
   A cation does not displace a proton and a bound cation does not shift a
   neighbour's pKa. Near pH 4.2, where the carboxyl pKa lies, real binding is a

@@ -62,9 +62,8 @@ def acetate(mol: int = 0) -> geo.LigandSet:
     from the methyl side. C-C 0.15 nm."""
     ox = geo.carboxylate([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], perp=[0.0, 1.0, 0.0], mol=mol)
     inert = geo.TYPE_INDEX["inert"]
-    carbons = geo.LigandSet(pos=[[0.0, 0.0, 0.0], [-0.15, 0.0, 0.0]], type=[inert, inert],
-                            charge=[0.0, 0.0], mol=[mol, mol], group=[0, 0])
-    out = geo.LigandSet.concat([ox, carbons])
+    methyl = geo.LigandSet(pos=[[-0.15, 0.0, 0.0]], type=[inert], charge=[0.0], mol=[mol], group=[0])
+    out = geo.LigandSet.concat([ox, methyl])
     out.group[:] = 0
     return out
 
@@ -76,7 +75,8 @@ def succinate(dihedral_deg: float = 65.0, mol: int = 0) -> geo.LigandSet:
     dihedral 65 deg is the gauche conformer, in which the two carboxylates can
     close on one cation, 180 deg the extended one. Each carboxylate points
     along its C(H2)->C bond with its O-C-O plane containing the chain's
-    neighbouring bond direction; the four carbons are inert atoms. The two
+    neighbouring bond direction; the four carbons are inert atoms (order:
+    O, O, C of the first carboxylate, O, O, C of the second, then C2, C3). The two
     carboxylates are separate groups of one molecule.
     """
     b, ang, phi = 0.153, math.radians(112.0), math.radians(dihedral_deg)
@@ -89,10 +89,9 @@ def succinate(dihedral_deg: float = 65.0, mol: int = 0) -> geo.LigandSet:
     for c_carboxyl, c_prev, c_other in ((c1, c2, c3), (c4, c3, c2)):
         parts.append(geo.carboxylate(c_carboxyl, c_carboxyl - c_prev, perp=c_other - c_prev, mol=mol))
     inert = geo.TYPE_INDEX["inert"]
-    carbons = geo.LigandSet(pos=[c1, c2, c3, c4], type=[inert] * 4, charge=[0.0] * 4, mol=[mol] * 4,
-                            group=[0, 0, 1, 1])
-    out = geo.LigandSet.concat(parts + [carbons])
-    out.group[:] = [0, 0, 1, 1, 0, 0, 1, 1]
+    methylenes = geo.LigandSet(pos=[c2, c3], type=[inert] * 2, charge=[0.0] * 2, mol=[mol] * 2, group=[0, 1])
+    out = geo.LigandSet.concat(parts + [methylenes])      # each carboxylate: O, O, C
+    out.group[:] = [0, 0, 0, 1, 1, 1, 0, 1]
     return out
 
 
@@ -102,9 +101,9 @@ def methylguanidinium(mol: int = 0) -> geo.LigandSet:
     (N-CH3 0.146 nm beyond NE)."""
     n = geo.guanidinium([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], normal=[0.0, 0.0, 1.0], mol=mol)
     inert = geo.TYPE_INDEX["inert"]
-    carbons = geo.LigandSet(pos=[[0.0, 0.0, 0.0], [-geo.GUANIDINIUM_CN_NM - 0.146, 0.0, 0.0]],
-                            type=[inert, inert], charge=[0.0, 0.0], mol=[mol, mol], group=[0, 0])
-    out = geo.LigandSet.concat([n, carbons])
+    methyl = geo.LigandSet(pos=[[-geo.GUANIDINIUM_CN_NM - 0.146, 0.0, 0.0]], type=[inert],
+                           charge=[0.0], mol=[mol], group=[0])
+    out = geo.LigandSet.concat([n, methyl])
     out.group[:] = 0
     return out
 

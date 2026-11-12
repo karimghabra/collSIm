@@ -131,25 +131,32 @@ def test_kernel_rotation_matches_matrix(params):
 
 def test_carboxylate_geometry_and_charge():
     lig = geo.carboxylate([1.0, 2.0, 3.0], [0, 0, 1])
+    # two oxygens, then the carbon as an inert atom
+    assert list(lig.type) == [geo.TYPE_INDEX["O_carboxylate"]] * 2 + [geo.TYPE_INDEX["inert"]]
+    assert np.allclose(lig.pos[2], [1.0, 2.0, 3.0])
     # O...O = 2 * 0.125 nm * sin(62.5 deg)
     assert np.linalg.norm(lig.pos[0] - lig.pos[1]) == pytest.approx(2 * 0.125 * math.sin(math.radians(62.5)))
-    assert np.allclose(np.linalg.norm(lig.pos - [1.0, 2.0, 3.0], axis=1), 0.125)
-    assert lig.charge.sum() == pytest.approx(-1.0)
-    assert set(lig.type) == {geo.TYPE_INDEX["O_carboxylate"]}
-    assert lig.group[0] == lig.group[1]
+    assert np.allclose(np.linalg.norm(lig.pos[:2] - [1.0, 2.0, 3.0], axis=1), 0.125)
+    assert lig.charge.sum() == pytest.approx(-1.0) and lig.charge[2] == 0.0
+    assert len(set(lig.group)) == 1
     # oxygens lean outward along the direction
-    assert np.all((lig.pos - [1.0, 2.0, 3.0]) @ [0, 0, 1] > 0)
+    assert np.all((lig.pos[:2] - [1.0, 2.0, 3.0]) @ [0, 0, 1] > 0)
+    bare = geo.carboxylate([1.0, 2.0, 3.0], [0, 0, 1], with_carbon=False)
+    assert len(bare) == 2 and np.allclose(bare.pos, lig.pos[:2])
 
 
 def test_protonated_carboxyl_is_neutral_and_of_the_weak_type():
     lig = geo.carboxylate([0, 0, 0], [1, 0, 0], protonated=True)
     assert np.all(lig.charge == 0.0)
-    assert set(lig.type) == {geo.TYPE_INDEX["O_carboxylic_acid"]}
+    assert set(lig.type[:2]) == {geo.TYPE_INDEX["O_carboxylic_acid"]}
 
 
 def test_guanidinium_is_planar_threefold_and_carries_plus_one():
     c = np.array([0.5, 0.5, 0.5])
-    lig = geo.guanidinium(c, [1, 0, 0], normal=[0, 0, 1])
+    full = geo.guanidinium(c, [1, 0, 0], normal=[0, 0, 1])
+    assert len(full) == 4 and full.type[3] == geo.TYPE_INDEX["inert"] and np.allclose(full.pos[3], c)
+    lig = geo.guanidinium(c, [1, 0, 0], normal=[0, 0, 1], with_carbon=False)
+    assert np.allclose(lig.pos, full.pos[:3])
     d = np.linalg.norm(lig.pos[:, None] - lig.pos[None], axis=2)
     # N...N = C-N * sqrt(3)
     assert np.allclose(d[np.triu_indices(3, 1)], 0.133 * math.sqrt(3))
@@ -172,7 +179,8 @@ def test_place_on_surface_follows_the_s_phi_convention():
     # phi = atan2(y, x), s = z: a site at phi = 90 deg, s = 3 nm, rho = 0.6 nm
     # has its carboxyl carbon at (0, 0.6, 3) and points along +y.
     lig = geo.place_on_surface([3.0], [math.pi / 2], 0.6, "carboxylate", mol=4)
-    centre = lig.pos.mean(axis=0)
+    assert np.allclose(lig.pos[2], [0.0, 0.6, 3.0])           # the carbon is the anchor
+    centre = lig.pos[:2].mean(axis=0)
     assert centre[0] == pytest.approx(0.0, abs=1e-12)
     assert centre[2] == pytest.approx(3.0)
     assert centre[1] == pytest.approx(0.6 + 0.125 * math.cos(math.radians(62.5)))
@@ -185,9 +193,9 @@ def test_place_on_surface_gives_each_site_its_own_group_and_molecule():
     lig = geo.place_on_surface([0.0, 1.0, 2.0], [0.0, 1.0, 2.0], 0.6,
                                ["carboxylate", "guanidinium", "ammonium"], mol=[0, 0, 1],
                                axis_xy=(2.0, 2.0))
-    assert len(lig) == 2 + 3 + 1
-    assert list(lig.group) == [0, 0, 1, 1, 1, 2]
-    assert list(lig.mol) == [0, 0, 0, 0, 0, 1]
+    assert len(lig) == 3 + 4 + 1
+    assert list(lig.group) == [0, 0, 0, 1, 1, 1, 1, 2]
+    assert list(lig.mol) == [0, 0, 0, 0, 0, 0, 0, 1]
     assert lig.charge.sum() == pytest.approx(-1 + 1 + 1)
 
 
@@ -195,9 +203,10 @@ def test_concat_keeps_groups_distinct():
     a = geo.carboxylate([0, 0, 0], [1, 0, 0])
     b = geo.carboxylate([1, 0, 0], [1, 0, 0], mol=1)
     both = geo.LigandSet.concat([a, b])
-    assert list(both.group) == [0, 0, 1, 1]
+    assert list(both.group) == [0, 0, 0, 1, 1, 1]
+    # closest approach of ligand atoms of different groups; inert carbons do not count
     assert both.min_separation() == pytest.approx(
-        np.min(np.linalg.norm(a.pos[:, None] - b.pos[None], axis=2)))
+        np.min(np.linalg.norm(a.pos[:2, None] - b.pos[None, :2], axis=2)))
 
 
 def test_ligandset_rejects_inconsistent_arrays():

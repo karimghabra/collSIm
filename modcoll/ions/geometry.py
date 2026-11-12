@@ -259,21 +259,28 @@ class LigandSet:
         """
         n = len(self)
         best = np.inf
+        inert = TYPE_INDEX["inert"]
         for i in range(n):
-            other = self.group != self.group[i]
+            if self.type[i] == inert:
+                continue          # excluded-volume atoms never enter a site
+            other = (self.group != self.group[i]) & (self.type != inert)
             if other.any():
                 d = np.linalg.norm(self.pos[other] - self.pos[i], axis=1).min()
                 best = min(best, float(d))
         return best
 
 
-def carboxylate(carbon, direction, perp=None, mol=0, protonated=False) -> LigandSet:
-    """Two oxygens of a carboxyl group whose carbon sits at ``carbon`` and whose
-    C(alpha/beta)->C bond points along ``direction``.
+def carboxylate(carbon, direction, perp=None, mol=0, protonated=False, with_carbon=True) -> LigandSet:
+    """A carboxyl group whose carbon sits at ``carbon`` and whose
+    C(alpha/beta)->C bond points along ``direction``: the two oxygens, then
+    the carbon as an inert (excluded-volume) atom.
 
     Deprotonated: -1/2 e on each oxygen (the two are equivalent by resonance).
     Protonated (carboxylic acid): both neutral and of the weak-ligand type.
     ``perp`` fixes the O-C-O plane; by default a deterministic perpendicular.
+    The carbon is what stops an ion from sitting between the oxygens closer
+    than a real one can; the contact energies were calibrated with it present,
+    so leave ``with_carbon`` on unless the carbon is represented otherwise.
     """
     c = np.asarray(carbon, float)
     u = np.asarray(direction, float)
@@ -287,12 +294,16 @@ def carboxylate(carbon, direction, perp=None, mol=0, protonated=False) -> Ligand
     t = TYPE_INDEX["O_carboxylic_acid" if protonated else "O_carboxylate"]
     q = 0.0 if protonated else -0.5
     n = np.cross(u, p)
-    return LigandSet(pos=[o1, o2], type=[t, t], charge=[q, q], mol=[mol, mol],
-                     group=[0, 0], normal=[n, n])
+    if not with_carbon:
+        return LigandSet(pos=[o1, o2], type=[t, t], charge=[q, q], mol=[mol, mol],
+                         group=[0, 0], normal=[n, n])
+    return LigandSet(pos=[o1, o2, c], type=[t, t, TYPE_INDEX["inert"]], charge=[q, q, 0.0],
+                     mol=[mol] * 3, group=[0] * 3, normal=[n, n, [0.0, 0.0, 0.0]])
 
 
-def guanidinium(carbon, direction, normal=None, mol=0) -> LigandSet:
-    """Three coplanar nitrogens around the guanidinium carbon ``carbon``.
+def guanidinium(carbon, direction, normal=None, mol=0, with_carbon=True) -> LigandSet:
+    """Three coplanar nitrogens around the guanidinium carbon ``carbon``,
+    then that carbon as an inert atom (see :func:`carboxylate`).
 
     ``direction`` points from the side chain outward. NE sits behind the carbon
     (towards the chain); NH1 and NH2 sit at +-60 deg from ``direction`` and are
@@ -311,8 +322,12 @@ def guanidinium(carbon, direction, normal=None, mol=0) -> LigandSet:
     nh1 = c + r * (np.cos(np.pi / 3) * u + np.sin(np.pi / 3) * p)
     nh2 = c + r * (np.cos(np.pi / 3) * u - np.sin(np.pi / 3) * p)
     t = TYPE_INDEX["N_guanidinium"]
-    return LigandSet(pos=[ne, nh1, nh2], type=[t] * 3, charge=[1 / 3] * 3, mol=[mol] * 3,
-                     group=[0] * 3, normal=[nrm] * 3)
+    if not with_carbon:
+        return LigandSet(pos=[ne, nh1, nh2], type=[t] * 3, charge=[1 / 3] * 3, mol=[mol] * 3,
+                         group=[0] * 3, normal=[nrm] * 3)
+    return LigandSet(pos=[ne, nh1, nh2, c], type=[t] * 3 + [TYPE_INDEX["inert"]],
+                     charge=[1 / 3] * 3 + [0.0], mol=[mol] * 4, group=[0] * 4,
+                     normal=[nrm] * 3 + [[0.0, 0.0, 0.0]])
 
 
 def ammonium(nitrogen, mol=0) -> LigandSet:
