@@ -288,17 +288,18 @@ def figure_selectivity(path, summary, f_values, ph_values, ionic_values, chance)
     for r, (key, label, ref) in enumerate(quantities):
         for c, ionic in enumerate(ionic_values):
             ax = axes[r, c]
+            styles = cc.level_styles(len(ph_values))
             for k, pH in enumerate(ph_values):
                 rows = sorted((x for x in par if x["pH"] == pH
                                and np.isclose(x["ionic_mM"], 1e3 * ionic)),
                               key=lambda x: x["f"])
-                x = np.array([row["f"] for row in rows]) + 0.012 * (k - 1.5)
+                x = np.array([row["f"] for row in rows]) + 0.012 * (k - 0.5 * (len(ph_values) - 1))
                 y = np.array([row[f"{key}_mean"] for row in rows])
                 e = np.array([row[f"{key}_sd"] for row in rows])
                 if key == "pairs_deepest_at_multiple":
                     e = None                 # a proportion: sd of 0/1 is not shown
-                col = cc.CATEGORICAL[k % len(cc.CATEGORICAL)]
-                ax.errorbar(x, y, yerr=e, color=col, marker=cc.MARKERS[k % 4], ms=4,
+                col, marker = styles[k]
+                ax.errorbar(x, y, yerr=e, color=col, marker=marker, ms=4,
                             lw=1.3, elinewidth=0.8, capsize=0, label=f"pH {pH:g}")
             if ref is not None:
                 ax.axhline(ref, color=cc.INK_SECONDARY, lw=0.8, ls=(0, (2, 3)))

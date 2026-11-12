@@ -275,3 +275,10 @@ def test_crosslink_weighting_shares_deviates_with_uniform_succinylation():
     hit = np.mean([[m.site_type[(m.chain == c) & (m.res_index == i) & ~m.smeared][0]
                     == int(SiteType.SUCC_LYS) for c, i in fast] for m in low])
     assert hit > 0.4                      # against 0.1 for an average lysine
+
+
+def test_level_styles_never_reuse_a_colour():
+    for n in (2, 4, 5):
+        styles = cli_common.level_styles(n)
+        assert len({c for c, _ in styles}) == n
+        assert len({m for _, m in styles}) == n

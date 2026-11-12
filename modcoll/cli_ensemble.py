@@ -151,14 +151,15 @@ def figure_net_charge(path, titration, charge_rows, f_show, ph_values):
         if c == 0:
             ax.set_ylabel("mean net charge per molecule (e)")
         ax = axes[1, c]
+        styles = cc.level_styles(len(ph_values))
         for k, pH in enumerate(ph_values):
             sel = sorted((r for r in charge_rows if r["chemistry"] == chem
                           and np.isclose(r["pH"], pH)), key=lambda r: r["f"])
             x = np.array([r["f"] for r in sel])
             y = np.array([r["net_charge_mean"] for r in sel])
             e = np.array([r["net_charge_sd"] for r in sel])
-            col = cc.CATEGORICAL[k % 4]
-            ax.errorbar(x, y, yerr=e, color=col, marker=cc.MARKERS[k % 4], ms=3.5, lw=1.2,
+            col, marker = styles[k]
+            ax.errorbar(x, y, yerr=e, color=col, marker=marker, ms=3.5, lw=1.2,
                         elinewidth=0.8, label=f"pH {pH:g}")
         ax.axhline(0.0, color=cc.INK_SECONDARY, lw=0.8)
         ax.set_xlabel("modified fraction f")

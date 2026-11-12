@@ -17,7 +17,7 @@ INK_SECONDARY = "#52514e"
 GRID = "#e4e3df"
 CATEGORICAL = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100")
 ORDINAL_BLUE = ("#86b6ef", "#5598e7", "#2a78d6", "#1c5cab", "#0d366b")
-MARKERS = ("o", "s", "^", "D")
+MARKERS = ("o", "s", "^", "D", "v")
 
 
 def float_list(text: str) -> list[float]:
@@ -30,6 +30,15 @@ def ordinal_colors(n: int) -> list[str]:
         return [ORDINAL_BLUE[2]]
     idx = np.round(np.linspace(0, len(ORDINAL_BLUE) - 1, n)).astype(int)
     return [ORDINAL_BLUE[i] for i in idx]
+
+
+def level_styles(n: int) -> list[tuple[str, str]]:
+    """(colour, marker) for ``n`` levels of one variable: the categorical
+    slots while they last (n <= 4), otherwise the one-hue ramp, which suits
+    the ordered variables (pH) that come in more levels. Never cycles a
+    colour; markers repeat only beyond five levels."""
+    colors = list(CATEGORICAL[:n]) if n <= len(CATEGORICAL) else ordinal_colors(n)
+    return [(colors[k], MARKERS[k % len(MARKERS)]) for k in range(n)]
 
 
 def pyplot():
