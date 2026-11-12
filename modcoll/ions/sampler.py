@@ -408,14 +408,17 @@ def _accept(rng, log_ratio):
 
 @njit
 def sweep_kernel(T, E, S, I, counters, zeta, moves, steps, dock_rho, stats, rng, n_sweeps, n_gc):
-    """Run n_sweeps sweeps. One sweep is max(N, 1) local moves on randomly
-    chosen ions followed by n_gc insertion/deletion attempts.
+    """Run n_sweeps sweeps. One sweep is N local moves on randomly chosen ions
+    (times the number of local moves per ion) followed by n_gc
+    insertion/deletion attempts.
 
     counters  [n_live, next_uid], updated in place
     zeta      (S,) activity per species in 1/nm^3 (0 = species not exchanged)
     moves     cumulative probabilities of translate, rotate, flip, dock
-    steps     [d_translate nm, a_rotate rad, p_full_rotation, R_nb nm, unused,
-               1 if ions interact with one another else 0]
+    steps     [d_translate nm, a_rotate rad, p_full_rotation, R_nb nm,
+               probability that a flip carries a displacement,
+               1 if ions interact with one another else 0,
+               local moves per ion and sweep]
     dock_rho  (S,) radius rho of the dock ball per species, nm
     stats     (7, 2) attempts and acceptances per move type, updated in place
     Returns the number of insertions refused for lack of array capacity.
@@ -433,7 +436,9 @@ def sweep_kernel(T, E, S, I, counters, zeta, moves, steps, dock_rho, stats, rng,
     a_rot = steps[1]
     p_full = steps[2]
     R_nb = steps[3]
+    p_flip_move = steps[4]
     interacting = steps[5] > 0.5
+    local_per_ion = int(steps[6])
     V_nb = 4.0 / 3.0 * math.pi * R_nb ** 3
     n_gc_species = 0
     for s in range(zeta.shape[0]):
@@ -442,7 +447,7 @@ def sweep_kernel(T, E, S, I, counters, zeta, moves, steps, dock_rho, stats, rng,
     overflow = 0
 
     for _ in range(n_sweeps):
-        n_local = n if n > 0 else 0
+        n_local = n * local_per_ion
         nn = n if interacting else 0  # ions seen by one another
         for _m in range(n_local):
             i = int(rng.integers(0, n))
@@ -493,8 +498,8 @@ def sweep_kernel(T, E, S, I, counters, zeta, moves, steps, dock_rho, stats, rng,
                 else:
                     st_new[k] = W_STATE
                     nw_new += 1
-                if rng.random() < 0.5:
-                    # half the flips come with a rigid displacement and rotation
+                if rng.random() < p_flip_move:
+                    # half the flips (by default) come with a rigid displacement and rotation
                     # drawn as in the translate and rotate moves. The combined
                     # proposal is still symmetric. It lets an ion that already
                     # holds one ligand swing a second site onto another while
@@ -656,6 +661,12 @@ class IonSampler:
                     an ideal gas in the field of the fixed atoms, the exact
                     infinite-dilution limit (bound-ion numbers are Poisson
                     with mean K c). For validation; production runs keep True.
+    flip_move_probability
+                    share of site flips that also displace and rotate the ion
+    local_moves_per_ion
+                    local moves per ion in one sweep. Raise it for dilute
+                    systems, where a sweep is otherwise mostly exchange
+                    attempts and bound ions hardly move.
     dock_radius, dock_ball
                     R_nb and rho of the dock/undock moves, nm. R_nb must cover
                     the outer-sphere shell (0.54 nm for Ca2+); rho defaults to
@@ -673,7 +684,8 @@ class IonSampler:
                  move_probabilities=(0.35, 0.25, 0.10, 0.30), translate_step: float = 0.15,
                  rotate_step: float = 0.6, full_rotation_probability: float = 0.1,
                  dock_radius: float = 0.56, dock_ball: float | None = None,
-                 gc_attempts_per_sweep: int | None = None, interacting: bool = True):
+                 gc_attempts_per_sweep: int | None = None, interacting: bool = True,
+                 flip_move_probability: float = 0.5, local_moves_per_ion: int = 1):
         if not isinstance(rng, np.random.Generator):
             raise TypeError("rng must be a numpy.random.Generator (explicit seed required)")
         self.params = params
@@ -717,7 +729,10 @@ class IonSampler:
             raise ValueError("move_probabilities: four non-negative numbers (translate, rotate, flip, dock)")
         self._moves = np.cumsum(p / p.sum())
         self._steps = np.array([translate_step, rotate_step, full_rotation_probability,
-                                dock_radius, 0.0, 1.0 if interacting else 0.0], dtype=float)
+                                dock_radius, flip_move_probability, 1.0 if interacting else 0.0,
+                                float(int(local_moves_per_ion))], dtype=float)
+        if local_moves_per_ion < 1:
+            raise ValueError("local_moves_per_ion must be at least 1")
         if dock_ball is None:
             # the lateral radius of each species' inner well: large enough for the
             # ball around one oxygen to contain the site position of a calcium

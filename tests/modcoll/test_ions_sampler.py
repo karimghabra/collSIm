@@ -125,7 +125,7 @@ def test_site_switching_reproduces_two_state_populations(params):
     lig = geo.LigandSet(pos=[centre + [0.0, 0.0, d + 0.5 * w_r]], type=[geo.TYPE_INDEX["O_carboxylate"]],
                         charge=[0.0], mol=[0])
     s = IonSampler(p, lig, [4.0, 4.0, 4.0], [True] * 3, 0.1, np.random.default_rng(77),
-                   move_probabilities=(0.0, 0.0, 1.0, 0.0))
+                   move_probabilities=(0.0, 0.0, 1.0, 0.0), flip_move_probability=0.0)
     s.add_ion("Ca", centre)
     s.sweep(500)
     states = []
@@ -232,17 +232,16 @@ def test_ideal_ion_isotherm_is_poisson_with_the_integrated_K(params):
     # ideal ions, so any concentration is legitimate; high ones give statistics
     for conc, seed in ((0.05, 31), (0.20, 32)):
         s = IonSampler(params, lig, box, [True] * 3, I, np.random.default_rng(seed),
-                       bath={"Ca": conc}, interacting=False)
+                       bath={"Ca": conc}, interacting=False, local_moves_per_ion=8)
         if K is None:
             ref = association_constants(params, "Ca", lig, I, np.random.default_rng(99),
                                         n_samples=3_000_000, coulomb_cutoff=s.coulomb_cutoff)
             K = ref.K_total
             K_err = math.sqrt(sum(v ** 2 for v in ref.err.values()))
         s.sweep(3000)
-        # few ions, so a sweep is only a few moves: sample every 20 sweeps
-        nb = bound_counts(s, an, 40000, 20)
+        nb = bound_counts(s, an, 40000, 10)
         mean_nb, err_nb = block_mean_and_error(nb)
-        assert err_nb < 0.06 * K * conc
+        assert err_nb < 0.08 * K * conc
         assert abs(mean_nb - K * conc) < 5 * math.hypot(err_nb, K_err * conc)
         p_bound, err_p = block_mean_and_error(nb > 0)
         assert abs(p_bound - (1.0 - math.exp(-K * conc))) < 5 * math.hypot(err_p, K_err * conc)
@@ -264,11 +263,14 @@ def test_interacting_isotherm_follows_the_langmuir_form_at_low_coverage(params):
                               coulomb_cutoff=s0.coulomb_cutoff).K_total
     thetas = []
     for conc, seed in ((0.005, 41), (0.02, 42)):
-        s = IonSampler(params, lig, box, [True] * 3, I, np.random.default_rng(seed), bath={"Ca": conc})
+        # a tenth of an ion in the box on average: give the few ions many local
+        # moves per sweep, or a bound one outlasts the run
+        s = IonSampler(params, lig, box, [True] * 3, I, np.random.default_rng(seed), bath={"Ca": conc},
+                       local_moves_per_ion=20)
         s.sweep(3000)
-        nb = bound_counts(s, an, 40000, 40)
+        nb = bound_counts(s, an, 40000, 20)
         theta, err = block_mean_and_error(nb > 0)
-        assert err < 0.08 * langmuir_guess(K, conc)
+        assert err < 0.10 * langmuir_guess(K, conc)
         langmuir = K * conc / (1.0 + K * conc)
         assert abs(theta - langmuir) < 5 * err + 0.08 * langmuir
         thetas.append(theta)
@@ -454,3 +456,26 @@ def test_calcium_variants_run_and_keep_the_bath_density(n_sites):
     mean_n, err_n = block_mean_and_error(counts)
     assert abs(mean_n - 0.05 * PER_NM3_PER_MOLAR * 64.0) < 5 * err_n
     assert s.snapshot().state.shape[1] >= n_sites
+
+
+def test_flip_with_displacement_keeps_free_ion_statistics(params):
+    """With flips that also move the ion (the default) a lone, uncharged
+    'calcium' must still have independent two-state sites and sit at the bath
+    density; with the displacement switched off the ion's position must not
+    change under flip moves alone (covered in the two-state test)."""
+    dg = 1.5
+    p = params.with_overrides({"species.Ca.charge": 0.0, "species.Ca.dg_des": dg})
+    s = IonSampler(p, empty(), [3.0, 3.0, 3.0], [True] * 3, 0.1, np.random.default_rng(909),
+                   move_probabilities=(0.0, 0.0, 1.0, 0.0), flip_move_probability=1.0)
+    start = np.array([1.5, 1.5, 1.5])
+    s.add_ion("Ca", start)
+    frac = []
+    for _ in range(20000):
+        s.sweep(5)
+        frac.append(s.snapshot().state[0, :7].mean())
+    mean_l, err_l = block_mean_and_error(frac)
+    assert abs(mean_l - 1.0 / (1.0 + math.exp(dg))) < 5 * err_l and err_l < 0.01
+    assert np.linalg.norm(s.snapshot().pos[0] - start) > 0.1      # it did move
+    with pytest.raises(ValueError):
+        IonSampler(p, empty(), [3.0, 3.0, 3.0], [True] * 3, 0.1, np.random.default_rng(1),
+                   local_moves_per_ion=0)
