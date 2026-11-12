@@ -1,0 +1,4 @@
+numpy>=2.0
+numba>=0.61      # optional: without it the kernels run interpreted
+matplotlib>=3.8  # only for validate_s3 figures
+pytest>=8

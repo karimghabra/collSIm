@@ -1,0 +1,598 @@
+# Parameters of the explicit divalent-ion model (modcoll.ions).
+#
+# Every parameter is a table with four required keys:
+#   value   the number (or a name, for a categorical choice)
+#   units   nm | kT (at 298.15 K) | e | mol/L | L/mol | deg | "-"
+#   source  citation, derivation, or how it was fitted
+#   status  "literature"   measured, critically compiled, simulated or derived by
+#                          arithmetic from such numbers; the source says which
+#           "fitted here"  produced by `python -m modcoll.ions.calibrate`
+#           "provisional"  an estimate or modelling choice with no measurement
+#                          behind it; first candidates for sensitivity runs
+# and two optional ones, `lo` and `hi`: a plausible range for sensitivity runs,
+# not a confidence interval.
+#
+# To change a number: edit `value` and `source`, set `status`, then run
+#   python -m modcoll.ions.calibrate --write
+# which refits every "fitted here" entry against [targets] and rewrites only
+# those values. tests/modcoll/test_ions_calibration.py fails when the fitted
+# values and the targets are out of step.
+
+[meta]
+units = "nm, kT at 298.15 K, elementary charges, mol/L"
+version = 2
+
+
+# ---------------------------------------------------------------------------
+[constants.temperature]
+value = 298.15
+units = "K"
+source = "Reference temperature of every energy in this file."
+status = "literature"
+
+[constants.bjerrum_length]
+value = 0.71
+units = "nm"
+source = "lB = e^2 / (4 pi eps0 eps_r kT) = 56.04 nm / eps_r at 298.15 K; eps_r = 78.4 for water gives 0.715, rounded to the project-wide 0.71."
+status = "literature"
+
+[constants.wca_epsilon]
+value = 1.0
+units = "kT"
+source = "Energy scale of the Weeks-Chandler-Andersen cores (J. Chem. Phys. 54 (1971) 5237). A convention: the repulsion reaches 1 kT at r = r_min / 2^(1/6)."
+status = "provisional"
+
+[constants.carboxyl_pKa]
+value = 4.3
+lo = 4.25
+hi = 4.35
+units = "-"
+source = "Glu side chain in unfolded peptides (Thurlkill, Grimsley, Scholtz & Pace, Protein Sci. 15 (2006) 1214, doi:10.1110/ps.051840806; Platzer, Okon & McIntosh, J. Biomol. NMR 60 (2014) 109, doi:10.1007/s10858-014-9862-y). Used only by the two-row demonstration; the site model carries its own pKa table."
+status = "literature"
+
+# ---------------------------------------------------------------------------
+# Contact radii of ligand atoms. Two atoms repel (WCA) inside R_a + R_b.
+[atom_radius.O_carboxylate]
+value = 0.14
+units = "nm"
+source = "Oxide radius of the Shannon scale (Acta Cryst. A32 (1976) 751; value from memory), on which R_cation + R_O is the metal-oxygen bond length. The model uses it only through d_MO - R_O and the water and hydrogen-bond contact distances."
+status = "provisional"
+
+[atom_radius.O_carboxylic_acid]
+value = 0.14
+units = "nm"
+source = "Same oxygen radius as the carboxylate."
+status = "provisional"
+
+[atom_radius.N_guanidinium]
+value = 0.14
+units = "nm"
+source = "Chosen so that a donor N and an acceptor O start to repel at 0.28 nm, just inside the N...O hydrogen-bond distance; not a van der Waals radius."
+status = "provisional"
+
+[atom_radius.N_ammonium]
+value = 0.14
+units = "nm"
+source = "As N_guanidinium."
+status = "provisional"
+
+[atom_radius.N_imidazolium]
+value = 0.14
+units = "nm"
+source = "As N_guanidinium."
+status = "provisional"
+
+[atom_radius.O_sulfate]
+value = 0.14
+units = "nm"
+source = "Same oxygen radius as the carboxylate."
+status = "provisional"
+
+[atom_radius.S_sulfate]
+value = 0.18
+units = "nm"
+source = "Van der Waals radius of sulfur, 1.80 A (Bondi, J. Phys. Chem. 68 (1964) 441; value from memory). Only keeps other atoms out of the tetrahedron's interior."
+status = "provisional"
+
+[atom_radius.inert]
+value = 0.17
+units = "nm"
+source = "Van der Waals radius of carbon, 1.70 A (Bondi 1964; value from memory), for excluded-volume-only atoms."
+status = "provisional"
+
+# ---------------------------------------------------------------------------
+# Mg2+: rigid octahedron, monodentate only.
+[species.Mg.charge]
+value = 2.0
+units = "e"
+source = "Formal charge."
+status = "literature"
+
+[species.Mg.geometry]
+value = "octahedron"
+units = "-"
+source = "Six-coordinate in solution, in 426 of 469 inorganic polyhedra and 'strictly octahedral' in protein sites (Persson, Liquids 2 (2022) 210, doi:10.3390/liquids2030014; Gagne & Hawthorne, Acta Cryst. B72 (2016) 602, doi:10.1107/S2052520616008507; Zheng, Cooper, Porebski, Shabalin, Handing & Minor, Acta Cryst. D73 (2017) 223, doi:10.1107/S2059798317001061)."
+status = "literature"
+
+[species.Mg.d_MO]
+value = 0.207
+lo = 0.202
+hi = 0.215
+units = "nm"
+source = "Mg-O 2.07 A for water and for monodentate carboxylate alike (Harding, Acta Cryst. D62 (2006) 678, doi:10.1107/S0907444906014594: PDB 2.08-2.09, CSD 2.05-2.07 A)."
+status = "literature"
+
+[species.Mg.centre_charge]
+value = 2.0
+units = "e"
+source = "The whole charge on the centre. Dummy-atom models put it on six points 0.09 nm out (0 on the centre and +1/3 per dummy in Saxena & Sept, J. Chem. Theory Comput. 9 (2013) 3538, doi:10.1021/ct400177g; -1 and +1/2 in Oelschlaeger, Klahn, Beard, Wilson & Warshel, J. Mol. Biol. 366 (2007) 687, doi:10.1016/j.jmb.2006.10.095 and Duarte, Bauer, Barrozo, Amrein, Purg, Aqvist & Kamerlin, J. Phys. Chem. B 118 (2014) 4351, doi:10.1021/jp501737x), but those partitions are fitting devices for explicit-water hydration free energies (Li & Merz, Chem. Rev. 117 (2017) 1564, doi:10.1021/acs.chemrev.6b00440) and carry no information in continuum water. Set to 0.0 or -1.0 to use them; the remainder is shared by the six points."
+status = "literature"
+
+[species.Mg.dummy_distance]
+value = 0.09
+units = "nm"
+source = "Metal-dummy distance 0.900 A (Oelschlaeger, Klahn, Beard, Wilson & Warshel, J. Mol. Biol. 366 (2007) 687, doi:10.1016/j.jmb.2006.10.095; Duarte, Bauer, Barrozo, Amrein, Purg, Aqvist & Kamerlin, J. Phys. Chem. B 118 (2014) 4351, doi:10.1021/jp501737x; Saxena & Sept, J. Chem. Theory Comput. 9 (2013) 3538, doi:10.1021/ct400177g). Used only when centre_charge differs from the formal charge."
+status = "literature"
+
+[species.Mg.dg_des]
+value = 16.0
+lo = 15.0
+hi = 17.0
+units = "kT"
+source = "Free energy of emptying one coordination site, taken as the activation free energy of water exchange: k = 6.7e5 /s, dH = 49.1 kJ/mol, dS = +31.1 J/(K mol) at 298 K, dissociative interchange (Bleuzen, Pittet, Helm & Merbach, Magn. Reson. Chem. 35 (1997) 765), i.e. 39.8 kJ/mol; 5.3e5 /s in Neely & Connick, J. Am. Chem. Soc. 92 (1970) 3476, doi:10.1021/ja00714a048. Bookkeeping at equilibrium: binding constants depend only on eps_in - dg_des."
+status = "literature"
+
+[species.Mg.water_radius]
+value = 0.135
+units = "nm"
+source = "A first-shell water and an acceptor oxygen it donates to sit about 0.275 nm apart; minus the oxygen radius 0.140."
+status = "provisional"
+
+[species.Mg.well_radial_halfwidth]
+value = 0.04
+units = "nm"
+source = "Half-width of the compact inner-sphere well along the bond; thermal spread about 0.005 nm, against 0.003-0.008 nm scatter of Mg-O in crystal surveys (Harding, Acta Cryst. D62 (2006) 678, doi:10.1107/S0907444906014594)."
+status = "provisional"
+
+[species.Mg.well_angular_halfwidth_deg]
+value = 24.0
+lo = 18.0
+hi = 28.0
+units = "deg"
+source = "Angle from the octahedral direction at which the inner-sphere well vanishes. Chosen so the thermal rms angular deviation of a bound oxygen is about 7 deg, the working tolerance for Mg sites (5-10 deg; validation thresholds of Zheng, Chordia, Cooper, Chruszcz, Muller, Sheldrick & Minor, Nat. Protoc. 9 (2014) 156, doi:10.1038/nprot.2013.172 and Zheng, Cooper, Porebski, Shabalin, Handing & Minor, Acta Cryst. D73 (2017) 223, doi:10.1107/S2059798317001061). A carboxylate cannot then span two sites: bidentate Mg-carboxylate is absent from protein sites (Bazayeva, Andreini & Rosato, Acta Cryst. D80 (2024) 362, doi:10.1107/S2059798324003152) and more than 25 kJ/mol above monodentate in ab initio MD (Mendes de Oliveira, Zukowski, Palivec, Henin, Martinez-Seara, Ben-Amotz, Jungwirth & Duboue-Dijon, Phys. Chem. Chem. Phys. 22 (2020) 24014, doi:10.1039/d0cp02987d)."
+status = "provisional"
+
+[species.Mg.well_angular_flat_deg]
+value = 0.0
+units = "deg"
+source = "No angular slack: the Mg2+ octahedron is rigid."
+status = "provisional"
+
+[species.Mg.bidentate_carboxylate]
+value = "no"
+units = "-"
+source = "Mg2+ binds carboxylate 'almost exclusively in a monodentate way': 0% bidentate for Asp and Glu in protein sites (Bazayeva, Andreini & Rosato, Acta Cryst. D80 (2024) 362, doi:10.1107/S2059798324003152). The loader therefore requires the inner well to be too narrow for two oxygens of one carboxylate."
+status = "literature"
+
+[species.Mg.outer_shell_distance]
+value = 0.42
+lo = 0.41
+hi = 0.43
+units = "nm"
+source = "Mg to second-shell oxygen, 0.41-0.43 nm (Persson, Liquids 2 (2022) 210, doi:10.3390/liquids2030014; seen only in a search summary of that review)."
+status = "provisional"
+
+[species.Mg.outer_shell_halfwidth]
+value = 0.08
+units = "nm"
+source = "Half-width of the outer-sphere shell; with the first-shell waters in place a ligand oxygen can approach to 0.34-0.49 nm depending on direction."
+status = "provisional"
+
+[species.Mg.wall_radius]
+value = 0.21
+units = "nm"
+source = "Closest approach of the ion centre to the surface of an excluded cylinder: one metal-oxygen bond length."
+status = "provisional"
+
+# ---------------------------------------------------------------------------
+# Ca2+: pentagonal bipyramid (7 sites) by default; load_params(ca_coordination=6 or 8)
+# selects the octahedron or the square antiprism.
+[species.Ca.charge]
+value = 2.0
+units = "e"
+source = "Formal charge."
+status = "literature"
+
+[species.Ca.geometry]
+value = "pentagonal_bipyramid"
+units = "-"
+source = "Seven is the best-supported single value for the hydrated ion: 7.2 +- 1.2 by EXAFS and close to 7 by neutron diffraction, 8 by X-ray scattering (Jalilehvand, Spangberg, Lindqvist-Reis, Hermansson, Persson & Sandstrom, J. Am. Chem. Soc. 123 (2001) 431, doi:10.1021/ja001533a); seven dummies on a pentagonal bipyramid in Saxena & Sept, J. Chem. Theory Comput. 9 (2013) 3538, doi:10.1021/ct400177g. Protein sites average 6-7 (Bazayeva, Andreini & Rosato, Acta Cryst. D80 (2024) 362, doi:10.1107/S2059798324003152; Katz, Glusker, Beebe & Bock, J. Am. Chem. Soc. 118 (1996) 5752, doi:10.1021/ja953943i)."
+status = "literature"
+
+[species.Ca.geometry_6]
+value = "octahedron"
+units = "-"
+source = "Six-site variant for sensitivity runs; 58% of a curated set of 370 protein Ca sites are six-coordinate (M. M. Harding, Metal coordination sites in proteins, web resource, University of Edinburgh, 2011)."
+status = "literature"
+
+[species.Ca.geometry_8]
+value = "square_antiprism"
+units = "-"
+source = "Eight-site variant for sensitivity runs; inorganic crystals prefer 8 (Gagne & Hawthorne, Acta Cryst. B72 (2016) 602, doi:10.1107/S2052520616008507). The uniform square antiprism is the usual idealisation; no survey of eight-coordinate site shapes was consulted."
+status = "provisional"
+
+[species.Ca.d_MO]
+value = 0.238
+lo = 0.233
+hi = 0.246
+units = "nm"
+source = "Ca-O 2.36 A to protein carboxylate, 2.39 A to water in crystals (Harding, Acta Cryst. D62 (2006) 678, doi:10.1107/S0907444906014594), 2.44-2.46 A in the aqua ion (Jalilehvand, Spangberg, Lindqvist-Reis, Hermansson, Persson & Sandstrom, J. Am. Chem. Soc. 123 (2001) 431, doi:10.1021/ja001533a)."
+status = "literature"
+
+[species.Ca.centre_charge]
+value = 2.0
+units = "e"
+source = "The whole charge on the centre, as for Mg. Saxena & Sept, J. Chem. Theory Comput. 9 (2013) 3538, doi:10.1021/ct400177g use 0 on the centre and +0.29 on each of seven dummies; set to 0.0 to use that layout."
+status = "literature"
+
+[species.Ca.dummy_distance]
+value = 0.09
+units = "nm"
+source = "Metal-dummy distance 0.9 A (Saxena & Sept, J. Chem. Theory Comput. 9 (2013) 3538, doi:10.1021/ct400177g; Duarte, Bauer, Barrozo, Amrein, Purg, Aqvist & Kamerlin, J. Phys. Chem. B 118 (2014) 4351, doi:10.1021/jp501737x). Used only when centre_charge differs from the formal charge."
+status = "literature"
+
+[species.Ca.dg_des]
+value = 6.0
+lo = 4.0
+hi = 11.0
+units = "kT"
+source = "Free energy of emptying one site, from the water-exchange rate as for Mg. The rate has never been measured directly: 1e7-1e9 /s from complex-formation kinetics (Diebler, Eigen, Ilgenfritz, Maass & Winkler, Pure Appl. Chem. 20 (1969) 93, doi:10.1351/pac196920010093), residence times of 40-200 ps in simulation (Schwenk & Rode, Pure Appl. Chem. 76 (2004) 37, doi:10.1351/pac200476010037; Remsing & Klein, J. Phys. Chem. A 123 (2019) 1077, doi:10.1021/acs.jpca.8b09667). Bookkeeping at equilibrium."
+status = "provisional"
+
+[species.Ca.water_radius]
+value = 0.135
+units = "nm"
+source = "As for Mg."
+status = "provisional"
+
+[species.Ca.well_radial_halfwidth]
+value = 0.06
+units = "nm"
+source = "Wider than Mg so that the longer bidentate Ca-O bonds (2.45-2.8 A, peak near 2.55 A; Harding, Acta Cryst. D62 (2006) 678, doi:10.1107/S0907444906014594; Bazayeva, Andreini & Rosato, Acta Cryst. D80 (2024) 362, doi:10.1107/S2059798324003152) stay inside the well."
+status = "provisional"
+
+[species.Ca.well_angular_halfwidth_deg]
+value = 35.0
+units = "deg"
+source = "Angle at which the inner-sphere well vanishes. Beyond 27.8 deg one site can hold both oxygens of a carboxylate (each sits 27.8 deg off the axis when the ion is on the bisector); 36 deg is the limit beyond which oxygens of two different groups could share a site (d sin(theta) = 0.140 nm)."
+status = "provisional"
+
+[species.Ca.well_angular_flat_deg]
+value = 22.0
+units = "deg"
+source = "Angular slack of the loose Ca2+ shell: inside this angle a ligand pays nothing for being off the ideal direction. The closer it comes to 27.8 deg, the more a carboxylate gains by putting both oxygens on one site. Fitted to targets.Ca_acetate.bidentate_fraction; the thermal rms deviation of a bound oxygen that results is to be compared with the 15-20 deg working tolerance for Ca sites (O-Ca-O peaks 17-19 deg wide in Schwenk & Rode, Pure Appl. Chem. 76 (2004) 37, doi:10.1351/pac200476010037)."
+status = "fitted here"
+
+[species.Ca.bidentate_carboxylate]
+value = "yes"
+units = "-"
+source = "A bidentate carboxylate on Ca2+ 'could be considered as occupying one coordination site' (Zheng, Chordia, Cooper, Chruszcz, Muller, Sheldrick & Minor, Nat. Protoc. 9 (2014) 156, doi:10.1038/nprot.2013.172); 22-32% of Ca-carboxylate contacts in protein sites are bidentate (Bazayeva, Andreini & Rosato, Acta Cryst. D80 (2024) 362, doi:10.1107/S2059798324003152). One site may hold both oxygens of one carboxylate (never oxygens of two groups) at the cost of a single water."
+status = "literature"
+
+[species.Ca.outer_shell_distance]
+value = 0.458
+lo = 0.453
+hi = 0.468
+units = "nm"
+source = "Ca to second-shell oxygen, 4.58 A (Jalilehvand, Spangberg, Lindqvist-Reis, Hermansson, Persson & Sandstrom, J. Am. Chem. Soc. 123 (2001) 431, doi:10.1021/ja001533a; Schwenk & Rode, Pure Appl. Chem. 76 (2004) 37, doi:10.1351/pac200476010037)."
+status = "literature"
+
+[species.Ca.outer_shell_halfwidth]
+value = 0.08
+units = "nm"
+source = "As for Mg."
+status = "provisional"
+
+[species.Ca.wall_radius]
+value = 0.24
+units = "nm"
+source = "Closest approach of the ion centre to the surface of an excluded cylinder: one metal-oxygen bond length."
+status = "provisional"
+
+# ---------------------------------------------------------------------------
+# SO4 2-: rigid tetrahedron of four oxygens around sulfur.
+[species.SO4.charge]
+value = -2.0
+units = "e"
+source = "Formal charge."
+status = "literature"
+
+[species.SO4.geometry]
+value = "tetrahedron"
+units = "-"
+source = "Rigid tetrahedron of oxygens (Vchirawongkwin, Rode & Persson, J. Phys. Chem. B 111 (2007) 4150, doi:10.1021/jp0702402; Zeron, Abascal & Vega, J. Chem. Phys. 151 (2019) 134504, doi:10.1063/1.5121392)."
+status = "literature"
+
+[species.SO4.d_SO]
+value = 0.1495
+lo = 0.147
+hi = 0.15
+units = "nm"
+source = "S-O 1.495 A in solution, about 0.02 A shorter in crystals (Vchirawongkwin, Rode & Persson, J. Phys. Chem. B 111 (2007) 4150, doi:10.1021/jp0702402); 1.49 A in the Madrid-2019 model (Zeron, Abascal & Vega, J. Chem. Phys. 151 (2019) 134504, doi:10.1063/1.5121392). O...O = d sqrt(8/3) = 0.244 nm."
+status = "literature"
+
+[species.SO4.oxygen_charge]
+value = -0.5
+units = "e"
+source = "The formal charge shared by the four oxygens, none on sulfur. Explicit-water force fields put positive charge on S (+0.90 with -0.65 on O in Zeron, Abascal & Vega, J. Chem. Phys. 151 (2019) 134504, doi:10.1063/1.5121392, net -1.7); set this to such a value to switch, the sulfur charge follows from the total. The monopole is the same and a tetrahedron has no dipole or quadrupole."
+status = "provisional"
+
+[species.SO4.hbond_distance]
+value = 0.29
+lo = 0.285
+hi = 0.295
+units = "nm"
+source = "Donor N to sulfate O, 2.85-2.95 A typical in protein sulfate and phosphate sites (Copley & Barton, J. Mol. Biol. 242 (1994) 321, doi:10.1006/jmbi.1994.1583)."
+status = "literature"
+
+[species.SO4.hbond_halfwidth]
+value = 0.04
+units = "nm"
+source = "Half-width of the hydrogen-bond well; it ends at 0.33 nm, near the 0.32 nm contact cut-off of Copley & Barton, J. Mol. Biol. 242 (1994) 321, doi:10.1006/jmbi.1994.1583."
+status = "provisional"
+
+[species.SO4.hbond_plane_halfwidth_deg]
+value = 35.0
+units = "deg"
+source = "Largest angle of the N...O vector out of the plane of a planar donor group. Guanidinium and imidazolium N-H bonds lie in the plane, so an oxygen stacked on the face is not hydrogen bonded."
+status = "provisional"
+
+[species.SO4.outer_contact_distance]
+value = 0.6
+units = "nm"
+source = "S...N distance below which sulfate and a cationic nitrogen count as a pair: a direct pair has S...N near 0.38-0.40 nm, one more water diameter gives about 0.6-0.65 nm."
+status = "provisional"
+
+[species.SO4.wall_radius]
+value = 0.29
+units = "nm"
+source = "Closest approach of sulfur to the surface of an excluded cylinder: S-O bond plus an oxygen radius."
+status = "provisional"
+
+# ---------------------------------------------------------------------------
+# Calibration targets: what the contact terms are fitted to. Each states the
+# ionic strength at which the model is evaluated.
+[targets.Ca_acetate.log_K_total]
+value = 1.18
+lo = 1.12
+hi = 1.24
+ionic_strength = 0.0
+units = "log10(L/mol)"
+source = "Ca2+ + acetate, 25 C, I = 0, critically selected (Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154; database rows read). Other evaluations: 1.12 and 0.93 in geochemical databases; an electrode study finds no measurable binding at I = 0.15 (Stumpff & McGuigan, Anal. Biochem. 459 (2014) 46)."
+status = "literature"
+
+[targets.Ca_acetate.K_inner]
+value = 3.6
+lo = 2.7
+hi = 4.0
+ionic_strength = 0.0
+units = "L/mol"
+source = "Contact ion pairs only: Raman multivariate curve resolution extrapolated to I = 0, 3.6 +- 0.4 /M (Mendes de Oliveira, Zukowski, Palivec, Henin, Martinez-Seara, Ben-Amotz, Jungwirth & Duboue-Dijon, Phys. Chem. Chem. Phys. 22 (2020) 24014, doi:10.1039/d0cp02987d, full text). With the total above this is an inner-sphere share of 0.24; other evidence spans 0.15-0.5 (Vazquez de Vasquez, Wellen Rudd, Baer, Beasley & Allen, J. Phys. Chem. B 125 (2021) 11308, doi:10.1021/acs.jpcb.1c06108)."
+status = "literature"
+
+[targets.Ca_acetate.bidentate_fraction]
+value = 0.27
+lo = 0.2
+hi = 0.35
+ionic_strength = 0.0
+units = "-"
+source = "Share of inner-sphere Ca-carboxylate contacts that are bidentate: 22.5% for Asp and 32.2% for Glu in protein sites at better than 1.5 A (Bazayeva, Andreini & Rosato, Acta Cryst. D80 (2024) 362, doi:10.1107/S2059798324003152); near 20% at coordination numbers 7-8 (Katz, Glusker, Beebe & Bock, J. Am. Chem. Soc. 118 (1996) 5752, doi:10.1021/ja953943i); mono- and bidentate equal within 4-5 kJ/mol in ab initio MD (Mendes de Oliveira, Zukowski, Palivec, Henin, Martinez-Seara, Ben-Amotz, Jungwirth & Duboue-Dijon, Phys. Chem. Chem. Phys. 22 (2020) 24014, doi:10.1039/d0cp02987d). A protein-crystal number applied to a solution pair."
+status = "literature"
+
+[targets.Mg_acetate.log_K_total]
+value = 1.26
+lo = 1.24
+hi = 1.28
+ionic_strength = 0.0
+units = "log10(L/mol)"
+source = "Mg2+ + acetate, 25 C, I = 0 (Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154; database rows read)."
+status = "literature"
+
+[targets.Mg_acetate.K_inner]
+value = 3.9
+lo = 1.1
+hi = 4.5
+ionic_strength = 0.0
+units = "L/mol"
+source = "Contact ion pairs only: Raman-MCR extrapolated to I = 0, 3.9 +- 0.6 /M (Mendes de Oliveira, Zukowski, Palivec, Henin, Martinez-Seara, Ben-Amotz, Jungwirth & Duboue-Dijon, Phys. Chem. Chem. Phys. 22 (2020) 24014, doi:10.1039/d0cp02987d, full text), an inner-sphere share of 0.21. Disputed: infrared and Raman work on carboxylate monolayers and solutions assigns Mg2+ mostly solvent-shared pairs, about 6% contact (Vazquez de Vasquez, Wellen Rudd, Baer, Beasley & Allen, J. Phys. Chem. B 125 (2021) 11308, doi:10.1021/acs.jpcb.1c06108); the low end of the range is that reading."
+status = "literature"
+
+[targets.Ca_sulfate.log_K_total]
+value = 2.36
+lo = 2.14
+hi = 2.36
+ionic_strength = 0.0
+units = "log10(L/mol)"
+source = "Ca2+ + SO4 2- = CaSO4(aq), 25 C, I = 0 (Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154); 2.14-2.31 in PHREEQC 3 database files (phreeqc.dat, minteq.v4.dat), U.S. Geological Survey."
+status = "literature"
+
+[targets.Ca_sulfate.inner_fraction]
+value = 0.29
+lo = 0.2
+hi = 0.4
+ionic_strength = 0.0
+units = "-"
+source = "Not measured. From ab initio MD of Ca2+ with a sulfate monoester (charge -1), where the monodentate contact pair lies 1-3.5 kJ/mol (0.9 kT) above the solvent-shared pair (Riopedre-Fernandez, Kostal, Martinek, Martinez-Seara & Biriukov, J. Chem. Inf. Model. 64 (2024) 7122, doi:10.1021/acs.jcim.4c00981): 1 / (1 + exp(0.9))."
+status = "provisional"
+
+[targets.Mg_sulfate.log_K_total]
+value = 2.26
+lo = 2.17
+hi = 2.42
+ionic_strength = 0.0
+units = "log10(L/mol)"
+source = "Mg2+ + SO4 2- = MgSO4(aq), 25 C, I = 0 (Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154); 2.23-2.42 in PHREEQC 3 database files (phreeqc.dat, minteq.v4.dat), U.S. Geological Survey and other compilations."
+status = "literature"
+
+[targets.Mg_sulfate.inner_fraction]
+value = 0.1
+lo = 0.05
+hi = 0.2
+ionic_strength = 0.0
+units = "-"
+source = "Raman sees only contact pairs and gives log K about 1.3 against 2.2-2.3 in total, so about 10% of MgSO4 pairs are contact (Hefter, Pure Appl. Chem. 78 (2006) 1571, doi:10.1351/pac200678081571)."
+status = "literature"
+
+[targets.SO4_guanidinium.K_total]
+value = 15.0
+lo = 5.0
+hi = 30.0
+ionic_strength = 0.0
+units = "L/mol"
+source = "An estimate, not a measurement: no association constant of sulfate with guanidinium has been published. Bracketed from NH4+ + SO4 2- (log K 1.03 at I = 0, flagged questionable) and Na+ + SO4 2- (0.73) in Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154, raised for arginine because sulfate binds guanidinium more than ammonium (Wernersson, Heyda, Kubickova, Krizek, Coufal & Jungwirth, J. Phys. Chem. B 114 (2010) 11934, doi:10.1021/jp1054342) and arginine binds heparin 2-2.5 times more tightly than lysine (Fromm, Hileman, Caldwell, Weiler & Linhardt, Arch. Biochem. Biophys. 323 (1995) 279, doi:10.1006/abbi.1995.9963). One of the weakest numbers in this file."
+status = "provisional"
+
+[targets.SO4_ammonium.K_total]
+value = 8.0
+lo = 5.0
+hi = 11.0
+ionic_strength = 0.0
+units = "L/mol"
+source = "An estimate: between Na+ + SO4 2- (5.4 /M) and NH4+ + SO4 2- (10.7 /M, flagged questionable) at I = 0 (Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154)."
+status = "provisional"
+
+[targets.SO4_imidazolium.K_total]
+value = 10.0
+lo = 4.0
+hi = 20.0
+ionic_strength = 0.0
+units = "L/mol"
+source = "An estimate: between ammonium and guanidinium, following the ranking of simulated association constants with methyl sulfate (guanidinium 1.47, imidazolium 1.06, methylammonium 0.60 /M; Herman, Valiya Parambathu, Asthagiri & Lenhoff, J. Phys. Chem. Lett. 14 (2023) 7020, doi:10.1021/acs.jpclett.3c01566)."
+status = "provisional"
+
+# ---------------------------------------------------------------------------
+# Checks: measured numbers the model is compared with but never fitted to.
+[checks.Ca_acetate.log_K_total_I0p1]
+value = 0.55
+lo = 0.48
+hi = 0.62
+ionic_strength = 0.1
+units = "log10(L/mol)"
+source = "Ca2+ + acetate at I = 0.1 (Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154). Tests the screened Coulomb term."
+status = "literature"
+
+[checks.Mg_acetate.log_K_total_I0p1]
+value = 0.51
+lo = 0.46
+hi = 0.56
+ionic_strength = 0.1
+units = "log10(L/mol)"
+source = "Mg2+ + acetate at I = 0.1 (Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154)."
+status = "literature"
+
+[checks.Ca_sulfate.log_K_total_I0p1]
+value = 1.53
+lo = 1.48
+hi = 1.58
+ionic_strength = 0.1
+units = "log10(L/mol)"
+source = "CaSO4(aq) at I = 0.1 (Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154)."
+status = "literature"
+
+[checks.Mg_sulfate.log_K_total_I0p1]
+value = 1.48
+lo = 1.46
+hi = 1.5
+ionic_strength = 0.1
+units = "log10(L/mol)"
+source = "MgSO4(aq) at I = 0.1 (Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154)."
+status = "literature"
+
+[checks.Ca_succinate.log_K_total]
+value = 2.0
+lo = 1.9
+hi = 2.1
+ionic_strength = 0.0
+units = "log10(L/mol)"
+source = "Ca2+ + succinate(2-), I = 0 (Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154): one cation held by two carboxylates, an upper bound for an intermolecular carboxylate bridge."
+status = "literature"
+
+[checks.Mg_succinate.log_K_total]
+value = 2.18
+lo = 2.1
+hi = 2.3
+ionic_strength = 0.0
+units = "log10(L/mol)"
+source = "Mg2+ + succinate(2-), I = 0 (Martell, Smith & Motekaitis, NIST Standard Reference Database 46 version 8.0, doi:10.18434/M32154)."
+status = "literature"
+
+# ---------------------------------------------------------------------------
+# Contact energies, refitted by `python -m modcoll.ions.calibrate --write`.
+# eps_in: gain when a ligand atom fills an emptied coordination site.
+# eps_out: water-mediated contact in the second shell (per atom, full shell).
+# eps_hb: per O...N hydrogen bond of sulfate.
+[contact.Mg.O_carboxylate.eps_in]
+value = 24.0
+units = "kT"
+source = "Fitted to targets.Mg_acetate."
+status = "fitted here"
+
+[contact.Mg.O_carboxylate.eps_out]
+value = 2.0
+units = "kT"
+source = "Fitted to targets.Mg_acetate."
+status = "fitted here"
+
+[contact.Ca.O_carboxylate.eps_in]
+value = 10.0
+units = "kT"
+source = "Fitted to targets.Ca_acetate."
+status = "fitted here"
+
+[contact.Ca.O_carboxylate.eps_out]
+value = 2.0
+units = "kT"
+source = "Fitted to targets.Ca_acetate."
+status = "fitted here"
+
+[contact.Mg.O_sulfate.eps_in]
+value = 24.0
+units = "kT"
+source = "Fitted to targets.Mg_sulfate."
+status = "fitted here"
+
+[contact.Mg.O_sulfate.eps_out]
+value = 1.0
+units = "kT"
+source = "Fitted to targets.Mg_sulfate."
+status = "fitted here"
+
+[contact.Ca.O_sulfate.eps_in]
+value = 10.0
+units = "kT"
+source = "Fitted to targets.Ca_sulfate."
+status = "fitted here"
+
+[contact.Ca.O_sulfate.eps_out]
+value = 1.0
+units = "kT"
+source = "Fitted to targets.Ca_sulfate."
+status = "fitted here"
+
+[contact.SO4.N_guanidinium.eps_hb]
+value = 1.0
+units = "kT"
+source = "Fitted to targets.SO4_guanidinium."
+status = "fitted here"
+
+[contact.SO4.N_ammonium.eps_hb]
+value = 1.0
+units = "kT"
+source = "Fitted to targets.SO4_ammonium."
+status = "fitted here"
+
+[contact.SO4.N_imidazolium.eps_hb]
+value = 1.0
+units = "kT"
+source = "Fitted to targets.SO4_imidazolium."
+status = "fitted here"
