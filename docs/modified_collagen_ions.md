@@ -271,7 +271,104 @@ isotherm test.
 
 ## What is calibrated, what is provisional
 
-RESULTS_PLACEHOLDER
+`params.toml` carries every number with units, source and one of three
+statuses. The split, in words:
+
+**Taken from the literature** (geometry and targets): bond lengths (Mg-O 0.207,
+Ca-O 0.238, S-O 0.1495 nm), second-shell distances, coordination geometry, the
+hydrogen-bond distance, the water-exchange barrier of Mg2+, and the calibration
+targets for the four cation pairs: total association constants from the NIST
+critical compilation, the Raman contact-pair constants of Mendes de Oliveira et
+al. (2020) for acetate, the contact share of MgSO4, and the bidentate share of
+Ca-carboxylate contacts in protein structures.
+
+**Fitted here** (12 numbers): eps_in and eps_out for each cation with
+carboxylate and with sulfate oxygen; eps_hb for sulfate with each of the three
+donors; and the angular slack of Ca2+. All are fitted at I = 0 to the model's
+own two-body integral. `python -m modcoll.ions.calibrate` prints the table;
+`--write` refits.
+
+| Pair (I = 0) | Target | Model | Fitted |
+|---|---|---|---|
+| Ca2+ + acetate | K_total 15.1 /M (log K 1.18) | 15.1 | eps_out 1.73 kT |
+| | K_inner 3.6 /M | 3.60 | eps_in 8.20 kT (dG_des 6.0) |
+| | bidentate share of inner 0.27 | 0.27 | angular slack 23.4 deg |
+| Mg2+ + acetate | K_total 18.2 /M (log K 1.26) | 18.2 | eps_out 2.01 kT |
+| | K_inner 3.9 /M | 3.90 | eps_in 20.7 kT (dG_des 16.0) |
+| Ca2+ + SO4 2- | K_total 229 /M (log K 2.36) | 229 | eps_out 1.24 kT |
+| | inner share 0.29 (provisional) | 0.29 | eps_in 6.13 kT |
+| Mg2+ + SO4 2- | K_total 182 /M (log K 2.26) | 182 | eps_out 1.21 kT |
+| | inner share 0.10 | 0.10 | eps_in 16.9 kT |
+| SO4 2- + guanidinium | K_total 15 /M (estimate) | 15.0 | eps_hb 2.96 kT |
+| SO4 2- + ammonium | K_total 8 /M (estimate) | 8.0 | eps_hb 0.34 kT |
+| SO4 2- + imidazolium | K_total 10 /M (estimate) | 10.0 | eps_hb 3.43 kT |
+
+Every pair has as many fitted numbers as targets, so every target is met to
+within the sampling error of the integral (about 1% on K_total, 2-3% on
+K_inner, 5% on the bidentate share). That is a statement about the fit having
+been done, not evidence for the model.
+
+**What the fit says about Ca2+ against Mg2+.** Inner-sphere pairs are 24% of
+Ca-acetate pairs and 21% of Mg-acetate pairs: both ions are mostly outer-sphere
+on a single carboxylate, and they do not differ in affinity. This is what the
+measurements say (equal total constants, equal Raman contact constants) and
+the model reproduces it because it was told to. It is **not** the picture of
+calcium binding directly and magnesium through its water shell. In the model
+the tight hexahydrate of Mg2+ (dG_des 16 kT against 6) is offset by a contact
+energy larger by nearly the same amount (eps_in 20.7 against 8.2; net 4.7
+against 2.2 kT). If Mg2+ gained only as much on contact as Ca2+ does, its
+inner-sphere share with acetate would be about 1e-5: the hydration-shell
+argument, taken alone, predicts an ion that is never inner-sphere, and the
+Raman data say otherwise. The magnesium target is disputed (another
+spectroscopic reading gives about 6% contact pairs instead of 21%); the low end
+is in `params.toml` as the range of that target and belongs in the sensitivity
+suite. What separates the two ions here is:
+
+- geometry: Mg2+ is rigid, strictly six-coordinate and monodentate; Ca2+ has
+  seven loosely directed sites and holds a carboxylate bidentate 27% of the
+  time;
+- kinetics, which the Monte Carlo does not have;
+- reach: the outer-sphere shell is at 0.42 nm for Mg2+ and 0.46 nm for Ca2+.
+
+**The split of eps_in and dG_des** is not quite pure bookkeeping for Ca2+. A
+bidentate carboxylate on one site gains eps_in twice and pays dG_des once, so
+at fixed single-contact affinity a larger dG_des means more bidentate binding.
+The angular slack was fitted with dG_des = 6 kT and must be refitted if that
+number is changed (4-11 kT is the plausible range).
+
+**Checks the model was not fitted to.**
+
+| Check | Measured | Model |
+|---|---|---|
+| Ca2+ + acetate, log K at I = 0.1 | 0.55 (0.48-0.62) | 0.67 |
+| Mg2+ + acetate, log K at I = 0.1 | 0.51 (0.46-0.56) | 0.74 |
+| CaSO4(aq), log K at I = 0.1 | 1.53 (1.48-1.58) | 1.36 |
+| MgSO4(aq), log K at I = 0.1 | 1.48 (1.46-1.50) | 1.26 |
+| Ca2+ + succinate(2-), log K at I = 0 | 2.00 (1.9-2.1) | 2.27 extended, 2.62 gauche |
+| Mg2+ + succinate(2-), log K at I = 0 | 2.18 (2.1-2.3) | 2.36 extended, 2.84 gauche |
+| ion-strength slope at I -> 0 | Debye-Hueckel limiting law | reproduced to 2% |
+
+Two honest readings. First, screening: going from I = 0 to 0.1 M the model
+weakens the 2:1 pairs by 0.5 log units where the measurements give 0.6-0.75,
+and the 2:2 pairs by 1.0 where they give 0.8. Plain Debye-Hueckel screening is
+within a factor 1.3-1.7 in K at the ionic strength the simulations will run at,
+not better. Second, two carboxylates on one cation: the model over-binds
+succinate by a factor of about 2 (extended conformer) to 4 (gauche). The
+conformers are rigid and the real ion is a mixture that also loses internal
+entropy on chelation, so some excess is expected, but the direction matters:
+**a cation held by two carboxylates is what a bridge is, and this model is more
+likely to overstate bridging than to understate it.**
+
+**Provisional** (no measurement behind them; first candidates for sensitivity
+runs): the three sulfate-donor targets (no association constant of sulfate with
+guanidinium, alkylammonium or imidazolium has been measured; these are the
+weakest numbers in the file), the inner-sphere share of CaSO4, dG_des of Ca2+
+(its water exchange has never been measured directly), all well widths and the
+angular half-widths, the water and atom contact radii, the outer-shell
+half-width, the outer contact distance of sulfate, the charge layout of
+sulfate, and the cylinder wall radii.
+
+S3_PLACEHOLDER
 
 ## Known limits
 

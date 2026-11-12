@@ -229,7 +229,8 @@ def test_ideal_ion_isotherm_is_poisson_with_the_integrated_K(params):
     I = 0.15
     an = BridgeAnalyzer(params, lig, box, [True] * 3)
     K = None
-    for conc, seed in ((0.02, 31), (0.10, 32)):
+    # ideal ions, so any concentration is legitimate; high ones give statistics
+    for conc, seed in ((0.05, 31), (0.20, 32)):
         s = IonSampler(params, lig, box, [True] * 3, I, np.random.default_rng(seed),
                        bath={"Ca": conc}, interacting=False)
         if K is None:
@@ -238,8 +239,8 @@ def test_ideal_ion_isotherm_is_poisson_with_the_integrated_K(params):
             K = ref.K_total
             K_err = math.sqrt(sum(v ** 2 for v in ref.err.values()))
         s.sweep(3000)
-        # few ions, so a sweep is only a few moves: sample every 40 sweeps
-        nb = bound_counts(s, an, 40000, 40)
+        # few ions, so a sweep is only a few moves: sample every 20 sweeps
+        nb = bound_counts(s, an, 40000, 20)
         mean_nb, err_nb = block_mean_and_error(nb)
         assert err_nb < 0.06 * K * conc
         assert abs(mean_nb - K * conc) < 5 * math.hypot(err_nb, K_err * conc)

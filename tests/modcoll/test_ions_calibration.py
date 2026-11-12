@@ -265,3 +265,26 @@ def test_succinate_conformers_have_the_textbook_chain_geometry(params):
     # each carboxylate keeps its own geometry
     o = ext.pos[ext.type == O_CARB]
     assert np.linalg.norm(o[0] - o[1]) == pytest.approx(2 * 0.125 * math.sin(math.radians(62.5)))
+
+
+def test_constants_the_model_was_not_fitted_to_stay_within_the_documented_residuals(params):
+    """Measured numbers held back from the fit (params.toml [checks]). The
+    model is not expected to hit them; the documentation states by how much it
+    misses, and this pins those statements.
+
+    At I = 0.1 the screened Coulomb term alone carries the change from I = 0:
+    the 2:1 pairs come out 0.1-0.25 log units too strong and the 2:2 pairs
+    0.15-0.25 too weak. Succinate (two carboxylates on one cation) is over-bound
+    by 0.2-0.7 log units in either rigid conformer."""
+    rows = {c["check"]: c for c in cal.checks(params, seed=4242, n_samples=400_000)}
+    for name in ("Ca_acetate", "Mg_acetate"):
+        c = rows[f"{name}.log_K_total_I0p1"]
+        assert 0.0 < c["log_K_total"] - c["measured"] < 0.3
+    for name in ("Ca_sulfate", "Mg_sulfate"):
+        c = rows[f"{name}.log_K_total_I0p1"]
+        assert -0.3 < c["log_K_total"] - c["measured"] < 0.0
+    for name in ("Ca_succinate", "Mg_succinate"):
+        c = rows[f"{name}.log_K_total"]
+        for conformer in ("gauche", "extended"):
+            assert 0.0 < c[f"log_K_total_{conformer}"] - c["measured"] < 0.8
+        assert c["log_K_total_gauche"] > c["log_K_total_extended"]

@@ -26,10 +26,12 @@ interactions in the bath is applied.
 
 Moves (each satisfies detailed balance on its own)
 --------------------------------------------------
-translate  centre displaced uniformly in a cube (symmetric).
+translate  centre displaced uniformly in a cube (symmetric); the cube edge
+           is the full step or a fifth of it, chosen at random.
 rotate     orientation composed with a rotation about a uniformly random axis
-           by an angle uniform in [-a, a] (symmetric); with a small
-           probability a fresh Haar-uniform orientation instead.
+           by an angle uniform in [-a, a] (symmetric), a being the full step
+           or a fifth of it; with a small probability a fresh Haar-uniform
+           orientation instead.
 flip       one site, chosen uniformly, changes state W <-> L (symmetric).
 dock       for a site k in state W: choose a ligand atom j uniformly among the
            C dockable atoms within R_nb of the centre; draw a Haar-uniform
@@ -466,14 +468,21 @@ def sweep_kernel(T, E, S, I, counters, zeta, moves, steps, dock_rho, stats, rng,
             ok = True
 
             if mv == M_TRANSLATE:
+                # half the attempts use a fifth of the step: an ion in a narrow
+                # contact well needs small moves, one in the bulk large ones.
+                # The choice does not depend on the state, so it stays symmetric.
+                scale = 1.0 if rng.random() < 0.5 else 0.2
                 for a in range(3):
-                    r_new[a] += (2.0 * rng.random() - 1.0) * d_tr
+                    r_new[a] += (2.0 * rng.random() - 1.0) * d_tr * scale
                 ok = _wrap(S, r_new)
             elif mv == M_ROTATE:
-                if rng.random() < p_full:
+                u_rot = rng.random()
+                if u_rot < p_full:
                     _haar(rng, q_new)
-                else:
+                elif u_rot < 0.5 * (1.0 + p_full):
                     _small_rotation(rng, I.quat[i], a_rot, q_new)
+                else:
+                    _small_rotation(rng, I.quat[i], 0.2 * a_rot, q_new)
             elif mv == M_FLIP:
                 k = int(rng.integers(0, ns))
                 if st_new[k] == W_STATE:
