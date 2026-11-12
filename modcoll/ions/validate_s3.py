@@ -494,6 +494,19 @@ def fig_bridge_kinds(agg, conc, path):
     plt.close(fig)
 
 
+def write_bridges_json(path, header: dict, agg: list, runs: list) -> None:
+    """One aggregated point or one run per line: readable, and small diffs."""
+    lines = ["{"]
+    for k, v in header.items():
+        lines.append(f" {json.dumps(k)}: {json.dumps(v)},")
+    for name, rows in (("aggregated", agg), ("runs", runs)):
+        lines.append(f" {json.dumps(name)}: [")
+        lines.extend("  " + json.dumps(r) + ("," if i < len(rows) - 1 else "") for i, r in enumerate(rows))
+        lines.append(" ]" + ("," if name == "aggregated" else ""))
+    lines.append("}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def write_markdown(rows, cf, mc, check_rows, path):
     lines = ["# S3 binding table", "",
              "Association constants in L/mol; `I` is the ionic strength (mol/L) at which the target is",
@@ -596,11 +609,10 @@ def main(argv=None) -> int:
         {"seed": args.seed, "quick": quick, "pairs": rows, "not_fitted_checks": check_rows,
          "mg_with_ca_contact_energy": cf, "single_pair_monte_carlo": mc}, indent=1), encoding="utf-8")
     write_markdown(rows, cf, mc, check_rows, args.out / "s3_binding_table.md")
-    (args.out / "s3_bridges.json").write_text(json.dumps(
-        {"seed": args.seed, "quick": quick, "row_spacing_nm": ROW_SPACING, "groups_per_row": ROW_GROUPS,
-         "ionic_strength": ROW_IONIC_STRENGTH, "pH": ROW_PH,
-         "pKa": float(params.value("constants.carboxyl_pKa")),
-         "aggregated": agg, "runs": row_results}, indent=1), encoding="utf-8")
+    write_bridges_json(args.out / "s3_bridges.json", {
+        "seed": args.seed, "quick": quick, "row_spacing_nm": ROW_SPACING, "groups_per_row": ROW_GROUPS,
+        "ionic_strength": ROW_IONIC_STRENGTH, "pH": ROW_PH,
+        "pKa": float(params.value("constants.carboxyl_pKa"))}, agg, row_results)
     fig_binding(rows, check_rows, args.out / "s3_binding_constants.png")
     fig_inner_outer(rows, mc, args.out / "s3_inner_outer.png")
     fig_distances(mc, params, args.out / "s3_distances.png")

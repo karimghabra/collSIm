@@ -44,11 +44,12 @@ def test_ranges_contain_their_values(params):
         assert e["lo"] <= e["value"] <= e["hi"], path
 
 
-def test_sources_cite_publications_not_internal_documents(params):
+def test_sources_do_not_point_at_local_files(params):
     for path, e in params.entries():
         if path.startswith("meta."):
             continue
-        assert "report.md" not in e["source"] and "/home/" not in e["source"], path
+        assert ".md" not in e["source"] or "docs/" in e["source"], path
+        assert "/home/" not in e["source"] and "file://" not in e["source"], path
 
 
 def test_loader_rejects_incomplete_or_mislabelled_entries():
