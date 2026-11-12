@@ -1,4 +1,6 @@
 #include "sim.h"
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <random>
 #include <unordered_map>

@@ -2,18 +2,24 @@
 // self-assembly with full-atom rendering of every tropocollagen.
 #include <glad/gl.h>
 
-// hybrid-graphics laptops: request the discrete GPU
+// hybrid-graphics laptops: request the discrete GPU. These exported symbols
+// are read by the Windows drivers only, and __declspec is not portable.
+#ifdef _WIN32
 extern "C" {
 __declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
 __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
+#endif
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <random>
 #include <string>
@@ -21,6 +27,7 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #include <vector>
 
 #include "camera.h"
+#include "headless_egl.h"
 #include "io.h"
 #include "we.h"
 #include "render.h"
@@ -71,6 +78,9 @@ struct Args {
     int frames = -1, every = 60, steps = -1, nmol = -1;
     std::string shot;
     bool hidden = false;
+    // no window system at all: OpenGL context made directly on EGL, no window
+    // surface, no UI. For batch runs and tests on machines without a display.
+    bool headless = false;
     uint32_t seed = 0;
     float camDist = 0, yaw = 999, pitch = 999, lod = -1;
     float epsEl = -1, epsHy = -1, epsNs = -1;
@@ -99,6 +109,7 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "--seed") a.seed = (uint32_t)next(1234);
         else if (s == "--shot" && i + 1 < argc) a.shot = argv[++i];
         else if (s == "--hidden") a.hidden = true;
+        else if (s == "--headless") { a.headless = true; a.hidden = true; }
         else if (s == "--camdist" && i + 1 < argc) a.camDist = (float)atof(argv[++i]);
         else if (s == "--yaw" && i + 1 < argc) a.yaw = (float)atof(argv[++i]);
         else if (s == "--pitch" && i + 1 < argc) a.pitch = (float)atof(argv[++i]);
@@ -167,20 +178,62 @@ static void applyPreset(SimParams& p, int which) {
     }
 }
 
+// True when the context is a CPU rasterizer rather than a GPU. The physics is
+// the same there, only slow, so this is worth a warning and nothing more: on
+// WSL2 in particular Mesa picks its software renderer unless told otherwise,
+// and a run would silently proceed on the CPU.
+static bool isSoftwareRenderer(const char* renderer) {
+    if (!renderer) return false;
+    for (const char* name : {"llvmpipe", "softpipe", "SwiftShader", "Software Rasterizer"})
+        if (strstr(renderer, name)) return true;
+    return false;
+}
+
 int main(int argc, char** argv) {
     Args args = parseArgs(argc, argv);
 
-    if (!glfwInit()) { fprintf(stderr, "glfwInit failed\n"); return 1; }
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    // Headless: GLFW runs on its null platform and still provides the clock,
+    // the event pump and a nominal window size, but it is asked for no OpenGL
+    // context -- that comes from headlessEglInit() below.
+    if (args.headless) glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_NULL);
+    if (!glfwInit()) {
+        fprintf(stderr, "glfwInit failed\n");
+#ifdef __linux__
+        if (!args.headless)
+            fprintf(stderr, "no usable window system: on a machine without a display, "
+                            "or in a build without X11/Wayland support, run with --headless\n");
+#endif
+        return 1;
+    }
+    if (args.headless) {
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    } else {
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    }
     if (args.hidden) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     GLFWwindow* win = glfwCreateWindow(1600, 1000, "collagenSim â€” type I collagen self-assembly", nullptr, nullptr);
     if (!win) { fprintf(stderr, "window creation failed\n"); return 1; }
-    glfwMakeContextCurrent(win);
-    if (!gladLoadGL(glfwGetProcAddress)) { fprintf(stderr, "gladLoadGL failed\n"); return 1; }
-    glfwSwapInterval(args.frames > 0 ? 0 : 1);
+    if (args.headless) {
+        HeadlessLoader loader = headlessEglInit();
+        if (!loader) {
+            fprintf(stderr, "--headless: could not create an OpenGL context without a "
+                            "window system (supported on Linux with Mesa's EGL)\n");
+            return 1;
+        }
+        if (!gladLoadGL((GLADloadfunc)loader)) { fprintf(stderr, "gladLoadGL failed\n"); return 1; }
+    } else {
+        glfwMakeContextCurrent(win);
+        if (!gladLoadGL(glfwGetProcAddress)) { fprintf(stderr, "gladLoadGL failed\n"); return 1; }
+        glfwSwapInterval(args.frames > 0 ? 0 : 1);
+    }
     printf("GL: %s | %s\n", glGetString(GL_RENDERER), glGetString(GL_VERSION));
+    fflush(stdout);
+    if (isSoftwareRenderer((const char*)glGetString(GL_RENDERER)))
+        fprintf(stderr, "WARNING: OpenGL is running on a software renderer, not on a GPU. "
+                        "Results are valid but every step runs on the CPU. On WSL2, set "
+                        "GALLIUM_DRIVER=d3d12 to reach the GPU.\n");
 
     glfwSetMouseButtonCallback(win, mouseButton);
     glfwSetCursorPosCallback(win, mouseMove);
@@ -209,7 +262,9 @@ int main(int argc, char** argv) {
         c[ImGuiCol_CheckMark] = {0.30f, 0.78f, 0.95f, 1.f};
         c[ImGuiCol_Separator] = {0.20f, 0.28f, 0.36f, 1.f};
     }
-    ImGui_ImplGlfw_InitForOpenGL(win, true);
+    // a headless window owns no GL context, which InitForOpenGL would assume
+    if (args.headless) ImGui_ImplGlfw_InitForOther(win, true);
+    else ImGui_ImplGlfw_InitForOpenGL(win, true);
     ImGui_ImplOpenGL3_Init("#version 460");
 
     AtomTemplate tmpl = loadAtoms(resolveAsset("assets/atoms.bin"));
@@ -855,6 +910,13 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    if (args.headless && args.frames <= 0) {
+        // nothing can close a window that does not exist
+        fprintf(stderr, "--headless needs an end: --frames N, --bench, or one of the "
+                        "test modes\n");
+        return 2;
+    }
+
     bool running = true;
     bool autoDt = true;
     int stepsPerFrame = args.steps > 0 ? args.steps : 60;
@@ -906,6 +968,16 @@ int main(int argc, char** argv) {
             printf("  t=%.2f us  contacts=%u  D-staggered=%u  overlaps=%u\n",
                    sim.simTimeNs * 1e-3, sim.stats[1] / 2, sim.stats[2] / 2, sim.stats[0] / 2);
             fflush(stdout);
+        }
+
+        if (args.headless) {
+            // The scene above went into the offscreen target, which is all a
+            // screenshot needs. There is no default framebuffer to present to
+            // and nobody to draw a control panel for.
+            glFinish();
+            frameIdx++;
+            if (frameIdx >= args.frames) break;
+            continue;
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
