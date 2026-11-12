@@ -7,10 +7,19 @@
 using glm::vec3;
 using glm::vec4;
 
+// Every simulation buffer is immutable storage that lives on the GPU.
+//
+// The usage hint this replaces (GL_DYNAMIC_DRAW) is not cosmetic everywhere:
+// Mesa's D3D12 driver, which is the only route to the GPU under WSL2, keeps
+// "dynamic" buffers in CPU-visible memory, and compute shaders reading and
+// writing them run about 16 times slower. Storage created here stays in video
+// memory. GL_DYNAMIC_STORAGE_BIT keeps glNamedBufferSubData legal; reading
+// back and clearing need no flag. Buffers are never resized in place -- they
+// are deleted and created again -- so immutability costs nothing.
 static GLuint makeSSBO(size_t bytes, const void* data = nullptr) {
     GLuint b;
     glCreateBuffers(1, &b);
-    glNamedBufferData(b, bytes, data, GL_DYNAMIC_DRAW);
+    glNamedBufferStorage(b, bytes, data, GL_DYNAMIC_STORAGE_BIT);
     return b;
 }
 

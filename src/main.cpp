@@ -314,7 +314,8 @@ int main(int argc, char** argv) {
         // scratch buffer so the base positions are never disturbed
         GLuint probe = 0;
         glCreateBuffers(1, &probe);
-        glNamedBufferData(probe, sizeof(glm::vec4) * nB, x0.data(), GL_DYNAMIC_DRAW);
+        // same storage as the simulation buffers (see makeSSBO in sim.cpp)
+        glNamedBufferStorage(probe, sizeof(glm::vec4) * nB, x0.data(), GL_DYNAMIC_STORAGE_BIT);
 
         // Two models over the SAME configuration. Turning the registry off
         // leaves only terms whose gradients are written analytically (bonds,
