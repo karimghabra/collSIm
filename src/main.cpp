@@ -2,18 +2,24 @@
 // self-assembly with full-atom rendering of every tropocollagen.
 #include <glad/gl.h>
 
-// hybrid-graphics laptops: request the discrete GPU
+// hybrid-graphics laptops: request the discrete GPU. These exported symbols
+// are read by the Windows drivers only, and __declspec is not portable.
+#ifdef _WIN32
 extern "C" {
 __declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
 __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
+#endif
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <random>
 #include <string>
@@ -21,6 +27,7 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #include <vector>
 
 #include "camera.h"
+#include "headless_egl.h"
 #include "io.h"
 #include "we.h"
 #include "render.h"
@@ -50,6 +57,10 @@ static bool g_malaProbe = false;   // dump the Metropolis ratio's components
 static bool g_equipart = false;    // equipartition test across engines
 static double g_equipNs = 300.0;   // simulated ns sampled per engine
 static int g_gradNmol = 12, g_gradSettle = 3000;
+// --gradgate P: make --gradtest a pass/fail test. P is the allowed median
+// gradient error of the analytically differentiated model, in percent of the
+// mean force; <= 0 keeps the test a printed diagnostic with exit code 0.
+static double g_gradGate = -1.0;
 
 static void mouseButton(GLFWwindow* w, int b, int a, int) {
     if (ImGui::GetIO().WantCaptureMouse) { g_rotating = g_panning = false; return; }
@@ -71,6 +82,9 @@ struct Args {
     int frames = -1, every = 60, steps = -1, nmol = -1;
     std::string shot;
     bool hidden = false;
+    // no window system at all: OpenGL context made directly on EGL, no window
+    // surface, no UI. For batch runs and tests on machines without a display.
+    bool headless = false;
     uint32_t seed = 0;
     float camDist = 0, yaw = 999, pitch = 999, lod = -1;
     float epsEl = -1, epsHy = -1, epsNs = -1;
@@ -99,6 +113,7 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "--seed") a.seed = (uint32_t)next(1234);
         else if (s == "--shot" && i + 1 < argc) a.shot = argv[++i];
         else if (s == "--hidden") a.hidden = true;
+        else if (s == "--headless") { a.headless = true; a.hidden = true; }
         else if (s == "--camdist" && i + 1 < argc) a.camDist = (float)atof(argv[++i]);
         else if (s == "--yaw" && i + 1 < argc) a.yaw = (float)atof(argv[++i]);
         else if (s == "--pitch" && i + 1 < argc) a.pitch = (float)atof(argv[++i]);
@@ -126,6 +141,7 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "--engine" && i + 1 < argc) a.engine = next(0);
         else if (s == "--gradnmol" && i + 1 < argc) g_gradNmol = atoi(argv[++i]);
         else if (s == "--gradsettle" && i + 1 < argc) g_gradSettle = atoi(argv[++i]);
+        else if (s == "--gradgate" && i + 1 < argc) g_gradGate = atof(argv[++i]);
         else if (s == "--xlink") a.xlink = 1;
         else if (s == "--box" && i + 3 < argc) {
             a.box.x = (float)atof(argv[++i]);
@@ -167,20 +183,62 @@ static void applyPreset(SimParams& p, int which) {
     }
 }
 
+// True when the context is a CPU rasterizer rather than a GPU. The physics is
+// the same there, only slow, so this is worth a warning and nothing more: on
+// WSL2 in particular Mesa picks its software renderer unless told otherwise,
+// and a run would silently proceed on the CPU.
+static bool isSoftwareRenderer(const char* renderer) {
+    if (!renderer) return false;
+    for (const char* name : {"llvmpipe", "softpipe", "SwiftShader", "Software Rasterizer"})
+        if (strstr(renderer, name)) return true;
+    return false;
+}
+
 int main(int argc, char** argv) {
     Args args = parseArgs(argc, argv);
 
-    if (!glfwInit()) { fprintf(stderr, "glfwInit failed\n"); return 1; }
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    // Headless: GLFW runs on its null platform and still provides the clock,
+    // the event pump and a nominal window size, but it is asked for no OpenGL
+    // context -- that comes from headlessEglInit() below.
+    if (args.headless) glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_NULL);
+    if (!glfwInit()) {
+        fprintf(stderr, "glfwInit failed\n");
+#ifdef __linux__
+        if (!args.headless)
+            fprintf(stderr, "no usable window system: on a machine without a display, "
+                            "or in a build without X11/Wayland support, run with --headless\n");
+#endif
+        return 1;
+    }
+    if (args.headless) {
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    } else {
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    }
     if (args.hidden) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     GLFWwindow* win = glfwCreateWindow(1600, 1000, "collagenSim â€” type I collagen self-assembly", nullptr, nullptr);
     if (!win) { fprintf(stderr, "window creation failed\n"); return 1; }
-    glfwMakeContextCurrent(win);
-    if (!gladLoadGL(glfwGetProcAddress)) { fprintf(stderr, "gladLoadGL failed\n"); return 1; }
-    glfwSwapInterval(args.frames > 0 ? 0 : 1);
+    if (args.headless) {
+        HeadlessLoader loader = headlessEglInit();
+        if (!loader) {
+            fprintf(stderr, "--headless: could not create an OpenGL context without a "
+                            "window system (supported on Linux with Mesa's EGL)\n");
+            return 1;
+        }
+        if (!gladLoadGL((GLADloadfunc)loader)) { fprintf(stderr, "gladLoadGL failed\n"); return 1; }
+    } else {
+        glfwMakeContextCurrent(win);
+        if (!gladLoadGL(glfwGetProcAddress)) { fprintf(stderr, "gladLoadGL failed\n"); return 1; }
+        glfwSwapInterval(args.frames > 0 ? 0 : 1);
+    }
     printf("GL: %s | %s\n", glGetString(GL_RENDERER), glGetString(GL_VERSION));
+    fflush(stdout);
+    if (isSoftwareRenderer((const char*)glGetString(GL_RENDERER)))
+        fprintf(stderr, "WARNING: OpenGL is running on a software renderer, not on a GPU. "
+                        "Results are valid but every step runs on the CPU. On WSL2, set "
+                        "GALLIUM_DRIVER=d3d12 to reach the GPU.\n");
 
     glfwSetMouseButtonCallback(win, mouseButton);
     glfwSetCursorPosCallback(win, mouseMove);
@@ -209,7 +267,9 @@ int main(int argc, char** argv) {
         c[ImGuiCol_CheckMark] = {0.30f, 0.78f, 0.95f, 1.f};
         c[ImGuiCol_Separator] = {0.20f, 0.28f, 0.36f, 1.f};
     }
-    ImGui_ImplGlfw_InitForOpenGL(win, true);
+    // a headless window owns no GL context, which InitForOpenGL would assume
+    if (args.headless) ImGui_ImplGlfw_InitForOther(win, true);
+    else ImGui_ImplGlfw_InitForOpenGL(win, true);
     ImGui_ImplOpenGL3_Init("#version 460");
 
     AtomTemplate tmpl = loadAtoms(resolveAsset("assets/atoms.bin"));
@@ -314,7 +374,8 @@ int main(int argc, char** argv) {
         // scratch buffer so the base positions are never disturbed
         GLuint probe = 0;
         glCreateBuffers(1, &probe);
-        glNamedBufferData(probe, sizeof(glm::vec4) * nB, x0.data(), GL_DYNAMIC_DRAW);
+        // same storage as the simulation buffers (see makeSSBO in sim.cpp)
+        glNamedBufferStorage(probe, sizeof(glm::vec4) * nB, x0.data(), GL_DYNAMIC_STORAGE_BIT);
 
         // Two models over the SAME configuration. Turning the registry off
         // leaves only terms whose gradients are written analytically (bonds,
@@ -322,6 +383,8 @@ int main(int argc, char** argv) {
         // and whatever appears only in the full model is the price of the
         // omitted d(facing angle)/dx and d(gate)/dx terms.
         const int nTrial = 48;
+        // best (smallest-median) probe size of the analytic model, for --gradgate
+        double gateMedPct = 1e30, gateP95Pct = 1e30;
         struct Case { const char* name; bool registry; };
         for (Case cs : {Case{"bonded + steric only", false}, Case{"full model", true}}) {
             float sEl = sim.p.epsEl, sHy = sim.p.epsHy, sNs = sim.p.epsNs;
@@ -378,6 +441,10 @@ int main(int argc, char** argv) {
                 double p95 = rels[(size_t)(rels.size() * 0.95)];
                 printf("  %-9.0e %11.5f %11.5f %11.2e %11.2e %7.3f%%\n",
                        eps, fd0, an0, med, p95, 100.0 * med / meanF);
+                if (!cs.registry && 100.0 * med / meanF < gateMedPct) {
+                    gateMedPct = 100.0 * med / meanF;
+                    gateP95Pct = 100.0 * p95 / meanF;
+                }
             }
             sim.p.epsEl = sEl; sim.p.epsHy = sHy; sim.p.epsNs = sNs;
             sim.p.epsCorr = sCo; sim.p.epsDep = sDe;
@@ -390,6 +457,22 @@ int main(int argc, char** argv) {
                "  parallel-transport frames at all -- that omission costs MALA\n"
                "  acceptance, not correctness, since Metropolis-Hastings needs\n"
                "  an exact U but tolerates an approximate proposal drift.\n");
+        if (g_gradGate > 0) {
+            // Pass/fail on the bonded + steric model only. Every term in it has
+            // an analytically written gradient, so an error there is a bug,
+            // whereas the full model's residual is a documented omission. It is
+            // judged at the probe size with the smallest median error: larger
+            // probes are limited by finite-difference truncation and smaller
+            // ones by float32 coordinate rounding. The 95th percentile gets
+            // five times the allowance, so a defect confined to a few beads
+            // fails even though it cannot move the median.
+            bool ok = gateMedPct <= g_gradGate && gateP95Pct <= 5.0 * g_gradGate;
+            printf("\n  gate, bonded + steric only: median error %.4f%% of <|F|> "
+                   "(limit %.4f%%), 95th percentile %.4f%% (limit %.4f%%): %s\n",
+                   gateMedPct, g_gradGate, gateP95Pct, 5.0 * g_gradGate,
+                   ok ? "PASS" : "FAIL");
+            return ok ? 0 : 1;
+        }
         return 0;
     }
 
@@ -854,6 +937,13 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    if (args.headless && args.frames <= 0) {
+        // nothing can close a window that does not exist
+        fprintf(stderr, "--headless needs an end: --frames N, --bench, or one of the "
+                        "test modes\n");
+        return 2;
+    }
+
     bool running = true;
     bool autoDt = true;
     int stepsPerFrame = args.steps > 0 ? args.steps : 60;
@@ -905,6 +995,16 @@ int main(int argc, char** argv) {
             printf("  t=%.2f us  contacts=%u  D-staggered=%u  overlaps=%u\n",
                    sim.simTimeNs * 1e-3, sim.stats[1] / 2, sim.stats[2] / 2, sim.stats[0] / 2);
             fflush(stdout);
+        }
+
+        if (args.headless) {
+            // The scene above went into the offscreen target, which is all a
+            // screenshot needs. There is no default framebuffer to present to
+            // and nobody to draw a control panel for.
+            glFinish();
+            frameIdx++;
+            if (frameIdx >= args.frames) break;
+            continue;
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);

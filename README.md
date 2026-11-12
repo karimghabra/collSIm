@@ -29,7 +29,63 @@ crowding agents — watch lateral condensation and D-registration), **dense**
 (isotropic + crowding).
 
 Useful CLI: `--preset 0|1|2 --nmol N --steps perFrame --colormode 0..4
---camdist nm --lod nm --hidden --frames N --every K --shot path/prefix`
+--camdist nm --lod nm --hidden --headless --frames N --every K --shot path/prefix`
+
+### Linux, WSL2 and machines without a display
+
+The same sources build with any C++20 compiler and CMake 3.24 or newer. The
+assets are generated first, exactly as the release workflow does:
+
+```
+pip install numpy matplotlib
+python tools/build_tropocollagen.py
+python tools/azimuthal_profile.py
+python tools/azimuthal_profile.py --atelo
+python tools/pmf_merge.py
+
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGLFW_BUILD_X11=OFF -DGLFW_BUILD_WAYLAND=OFF
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+The two `GLFW_BUILD_*` options leave out GLFW's window-system backends, whose
+development headers a headless machine usually does not have. A binary built
+that way runs only with `--headless`; omit the options (with the X11 or Wayland
+development packages installed) to get the interactive window as well.
+
+`--headless` needs no display at all. The OpenGL context is created directly on
+EGL with no window surface, the control panel is not drawn, and everything else
+is unchanged, including `--shot` screenshots:
+
+```
+./build/collagenSim --headless --bench --pbc --nmol 400 --frames 5 --steps 2000 --every 1
+./build/collagenSim --headless --preset 1 --frames 4 --every 1 --steps 300 --shot shots/quench
+```
+
+A headless run has no window to close, so it needs an end: `--frames N`,
+`--bench`, or one of the test modes. Start the program from inside the
+repository tree; `shaders/` and `assets/` are found by walking up from the
+working directory.
+
+**Check which renderer you got.** The first line printed names it, for example
+`GL: D3D12 (NVIDIA GeForce RTX 3080) | 4.6 (Core Profile) Mesa ...`. Under WSL2
+the GPU is reached through Mesa's D3D12 driver, and Mesa does not pick it by
+itself:
+
+```
+export GALLIUM_DRIVER=d3d12
+```
+
+Without it the run lands on Mesa's software renderer (`llvmpipe`). The program
+says so with a warning and carries on: an OpenGL 4.5 context is accepted in
+headless mode and the shaders are compiled as GLSL 4.50, which they fit
+without change. The physics is identical there, only slow, which is what makes
+it usable for tests on a machine with no GPU.
+
+`ctest` runs two tests: `scale_selftest` (the scale ladder's gates, no OpenGL)
+and, on Linux, `headless_gradtest`, which is `--headless --gradtest` with a
+pass/fail threshold (see `--gradgate` below). The second needs the generated
+assets and any OpenGL 4.5+ implementation, GPU or software.
 
 ## The model, honestly
 
@@ -362,6 +418,14 @@ The bonded gradients are exact. The registry term leaves a systematic ~0.2%,
 which is the deliberately omitted `d(facing angle)/dx` and `d(gate)/dx`.
 Metropolis-Hastings needs an exact `U` but tolerates an approximate drift, so
 this costs acceptance rate, not correctness.
+
+By default the test only prints. `--gradgate P` turns the first row into a
+pass/fail check with a non-zero exit code on failure: the bonded + steric
+model's median error must stay below `P` percent of the mean force, and its
+95th percentile below `5P`, at the probe size where the median is smallest
+(larger probes are limited by finite-difference truncation, smaller ones by
+float32 coordinate rounding). The full model is not gated, because its residual
+is the documented omission above rather than a defect. `ctest` uses `P = 0.1`.
 
 ### MALA, and what acceptance actually means
 

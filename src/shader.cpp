@@ -50,8 +50,21 @@ static std::string readFile(const std::string& path) {
     return ss.str();
 }
 
-static GLuint compile(GLenum type, const std::string& src, const std::string& name) {
+static GLuint compile(GLenum type, const std::string& fileSrc, const std::string& name) {
     GLuint s = glCreateShader(type);
+    // The shaders declare GLSL 4.60 but use nothing newer than 4.50. A 4.5
+    // context -- which is all Mesa's software renderer offers, and so all a
+    // machine without a GPU has -- rejects the declaration outright, so it is
+    // rewritten there. On a 4.6 context the source is passed through untouched.
+    std::string src = fileSrc;
+    GLint glMajor = 0, glMinor = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &glMajor);
+    glGetIntegerv(GL_MINOR_VERSION, &glMinor);
+    if (glMajor == 4 && glMinor == 5) {
+        const std::string declared = "#version 460";
+        size_t at = src.find(declared);
+        if (at != std::string::npos) src.replace(at, declared.size(), "#version 450");
+    }
     const char* c = src.c_str();
     glShaderSource(s, 1, &c, nullptr);
     glCompileShader(s);
