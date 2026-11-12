@@ -86,3 +86,14 @@ if (MSVC)
 endif()
 enable_testing()
 add_test(NAME scale_selftest COMMAND scale_selftest)
+
+# Is the rigorous engine's drift the gradient of its potential? Runs the real
+# compute kernels on whatever OpenGL the machine has, with no window system:
+# a GPU where there is one, Mesa's software renderer otherwise. Needs the
+# generated assets (see README), which is why it runs from the source tree.
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_test(NAME headless_gradtest
+    COMMAND collagenSim --headless --gradtest --gradsettle 600 --gradgate 0.1
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  set_tests_properties(headless_gradtest PROPERTIES TIMEOUT 600)
+endif()

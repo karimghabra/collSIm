@@ -57,6 +57,10 @@ static bool g_malaProbe = false;   // dump the Metropolis ratio's components
 static bool g_equipart = false;    // equipartition test across engines
 static double g_equipNs = 300.0;   // simulated ns sampled per engine
 static int g_gradNmol = 12, g_gradSettle = 3000;
+// --gradgate P: make --gradtest a pass/fail test. P is the allowed median
+// gradient error of the analytically differentiated model, in percent of the
+// mean force; <= 0 keeps the test a printed diagnostic with exit code 0.
+static double g_gradGate = -1.0;
 
 static void mouseButton(GLFWwindow* w, int b, int a, int) {
     if (ImGui::GetIO().WantCaptureMouse) { g_rotating = g_panning = false; return; }
@@ -137,6 +141,7 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "--engine" && i + 1 < argc) a.engine = next(0);
         else if (s == "--gradnmol" && i + 1 < argc) g_gradNmol = atoi(argv[++i]);
         else if (s == "--gradsettle" && i + 1 < argc) g_gradSettle = atoi(argv[++i]);
+        else if (s == "--gradgate" && i + 1 < argc) g_gradGate = atof(argv[++i]);
         else if (s == "--xlink") a.xlink = 1;
         else if (s == "--box" && i + 3 < argc) {
             a.box.x = (float)atof(argv[++i]);
@@ -378,6 +383,8 @@ int main(int argc, char** argv) {
         // and whatever appears only in the full model is the price of the
         // omitted d(facing angle)/dx and d(gate)/dx terms.
         const int nTrial = 48;
+        // best (smallest-median) probe size of the analytic model, for --gradgate
+        double gateMedPct = 1e30, gateP95Pct = 1e30;
         struct Case { const char* name; bool registry; };
         for (Case cs : {Case{"bonded + steric only", false}, Case{"full model", true}}) {
             float sEl = sim.p.epsEl, sHy = sim.p.epsHy, sNs = sim.p.epsNs;
@@ -434,6 +441,10 @@ int main(int argc, char** argv) {
                 double p95 = rels[(size_t)(rels.size() * 0.95)];
                 printf("  %-9.0e %11.5f %11.5f %11.2e %11.2e %7.3f%%\n",
                        eps, fd0, an0, med, p95, 100.0 * med / meanF);
+                if (!cs.registry && 100.0 * med / meanF < gateMedPct) {
+                    gateMedPct = 100.0 * med / meanF;
+                    gateP95Pct = 100.0 * p95 / meanF;
+                }
             }
             sim.p.epsEl = sEl; sim.p.epsHy = sHy; sim.p.epsNs = sNs;
             sim.p.epsCorr = sCo; sim.p.epsDep = sDe;
@@ -446,6 +457,22 @@ int main(int argc, char** argv) {
                "  parallel-transport frames at all -- that omission costs MALA\n"
                "  acceptance, not correctness, since Metropolis-Hastings needs\n"
                "  an exact U but tolerates an approximate proposal drift.\n");
+        if (g_gradGate > 0) {
+            // Pass/fail on the bonded + steric model only. Every term in it has
+            // an analytically written gradient, so an error there is a bug,
+            // whereas the full model's residual is a documented omission. It is
+            // judged at the probe size with the smallest median error: larger
+            // probes are limited by finite-difference truncation and smaller
+            // ones by float32 coordinate rounding. The 95th percentile gets
+            // five times the allowance, so a defect confined to a few beads
+            // fails even though it cannot move the median.
+            bool ok = gateMedPct <= g_gradGate && gateP95Pct <= 5.0 * g_gradGate;
+            printf("\n  gate, bonded + steric only: median error %.4f%% of <|F|> "
+                   "(limit %.4f%%), 95th percentile %.4f%% (limit %.4f%%): %s\n",
+                   gateMedPct, g_gradGate, gateP95Pct, 5.0 * g_gradGate,
+                   ok ? "PASS" : "FAIL");
+            return ok ? 0 : 1;
+        }
         return 0;
     }
 

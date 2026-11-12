@@ -1,0 +1,47 @@
+name: linux
+on:
+  pull_request:
+  push:
+    branches: [main, modified-collagen]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The runner has no GPU and no display. Mesa's software renderer gives the
+      # headless test an OpenGL 4.5 context to run the compute kernels on.
+      - name: Install Mesa (EGL + software renderer)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1-mesa-dri
+
+      - name: Generate assets from source data
+        run: |
+          pip install numpy matplotlib
+          python tools/build_tropocollagen.py
+          python tools/azimuthal_profile.py
+          python tools/azimuthal_profile.py --atelo
+          python tools/pmf_merge.py
+
+      # No window-system backends: the runner has no X11 or Wayland headers,
+      # and the tests only use --headless.
+      - name: Configure and build
+        run: |
+          cmake --version
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGLFW_BUILD_X11=OFF -DGLFW_BUILD_WAYLAND=OFF
+          cmake --build build -j
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
