@@ -1,0 +1,319 @@
+{
+  "bands": [
+    0.1,
+    0.2,
+    0.3
+  ],
+  "bootstrap_resamples": 200,
+  "chain_end_models": [
+    "mature",
+    "pepsin"
+  ],
+  "coarse_step": 0.1,
+  "inverse": {
+    "band_0.1": {
+      "abs_net_charge_pH7_min": 141.16742033677338,
+      "band": 0.1,
+      "f_acet_max": 1.0,
+      "f_acet_min": 0.0,
+      "f_acyl_max": 1.0,
+      "f_acyl_min": 0.5,
+      "f_deam_max": 1.0,
+      "f_deam_min": 0.0,
+      "f_succ_max": 1.0,
+      "f_succ_min": 0.0,
+      "n_excluded_as_insoluble": 0,
+      "n_grid_points": 36162,
+      "n_in_band": 9180,
+      "n_points": 9180,
+      "net_charge_pH7_max": -141.16742033677338,
+      "pI_high": 4.3,
+      "pI_low": 4.1000000000000005,
+      "pure_acetylation_f_max": null,
+      "pure_acetylation_f_min": null,
+      "pure_acetylation_f_reaching_band": null,
+      "pure_acetylation_lowest_pI": 4.640870302937418,
+      "pure_acetylation_reaches": false,
+      "pure_deamidation_f_max": null,
+      "pure_deamidation_f_min": null,
+      "pure_deamidation_f_reaching_band": null,
+      "pure_deamidation_lowest_pI": 4.736367344646513,
+      "pure_deamidation_reaches": false,
+      "pure_succinylation_f_max": 1.0,
+      "pure_succinylation_f_min": 1.0,
+      "pure_succinylation_f_reaching_band": 0.9854750300904775,
+      "pure_succinylation_lowest_pI": 4.288085394157595,
+      "pure_succinylation_reaches": true,
+      "share_of_grid": 0.2538576406172225,
+      "soluble_threshold_e": 69.24131126957502,
+      "without_succinylation_f_acet_min": 0.7,
+      "without_succinylation_f_deam_min": 0.55,
+      "without_succinylation_reached": true
+    },
+    "band_0.2": {
+      "abs_net_charge_pH7_min": 115.72632429424313,
+      "band": 0.2,
+      "f_acet_max": 1.0,
+      "f_acet_min": 0.0,
+      "f_acyl_max": 1.0,
+      "f_acyl_min": 0.375,
+      "f_deam_max": 1.0,
+      "f_deam_min": 0.0,
+      "f_succ_max": 1.0,
+      "f_succ_min": 0.0,
+      "n_excluded_as_insoluble": 0,
+      "n_grid_points": 36162,
+      "n_in_band": 16108,
+      "n_points": 16108,
+      "net_charge_pH7_max": -115.72632429424313,
+      "pI_high": 4.4,
+      "pI_low": 4.0,
+      "pure_acetylation_f_max": null,
+      "pure_acetylation_f_min": null,
+      "pure_acetylation_f_reaching_band": null,
+      "pure_acetylation_lowest_pI": 4.640870302937418,
+      "pure_acetylation_reaches": false,
+      "pure_deamidation_f_max": null,
+      "pure_deamidation_f_min": null,
+      "pure_deamidation_f_reaching_band": null,
+      "pure_deamidation_lowest_pI": 4.736367344646513,
+      "pure_deamidation_reaches": false,
+      "pure_succinylation_f_max": 1.0,
+      "pure_succinylation_f_min": 0.875,
+      "pure_succinylation_f_reaching_band": 0.8665137725456677,
+      "pure_succinylation_lowest_pI": 4.288085394157595,
+      "pure_succinylation_reaches": true,
+      "share_of_grid": 0.44543996460372765,
+      "soluble_threshold_e": 69.24131126957502,
+      "without_succinylation_f_acet_min": 0.525,
+      "without_succinylation_f_deam_min": 0.35,
+      "without_succinylation_reached": true
+    },
+    "band_0.3": {
+      "abs_net_charge_pH7_min": 94.73965155144735,
+      "band": 0.3,
+      "f_acet_max": 1.0,
+      "f_acet_min": 0.0,
+      "f_acyl_max": 1.0,
+      "f_acyl_min": 0.25,
+      "f_deam_max": 1.0,
+      "f_deam_min": 0.0,
+      "f_succ_max": 1.0,
+      "f_succ_min": 0.0,
+      "n_excluded_as_insoluble": 0,
+      "n_grid_points": 36162,
+      "n_in_band": 21485,
+      "n_points": 21485,
+      "net_charge_pH7_max": -94.73965155144735,
+      "pI_high": 4.5,
+      "pI_low": 3.9000000000000004,
+      "pure_acetylation_f_max": null,
+      "pure_acetylation_f_min": null,
+      "pure_acetylation_f_reaching_band": null,
+      "pure_acetylation_lowest_pI": 4.640870302937418,
+      "pure_acetylation_reaches": false,
+      "pure_deamidation_f_max": null,
+      "pure_deamidation_f_min": null,
+      "pure_deamidation_f_reaching_band": null,
+      "pure_deamidation_lowest_pI": 4.736367344646513,
+      "pure_deamidation_reaches": false,
+      "pure_succinylation_f_max": 1.0,
+      "pure_succinylation_f_min": 0.775,
+      "pure_succinylation_f_reaching_band": 0.7567346376191991,
+      "pure_succinylation_lowest_pI": 4.288085394157595,
+      "pure_succinylation_reaches": true,
+      "share_of_grid": 0.5941319617277805,
+      "soluble_threshold_e": 69.24131126957502,
+      "without_succinylation_f_acet_min": 0.35,
+      "without_succinylation_f_deam_min": 0.18,
+      "without_succinylation_reached": true
+    }
+  },
+  "largest_pI_standard_error_within_widest_band": 0.0034170148190303482,
+  "liming_f_deam": 0.18,
+  "lowest_pI_on_grid": {
+    "f_acet": 0.0,
+    "f_deam": 1.0,
+    "f_succ": 1.0,
+    "pI": 4.000886574087084
+  },
+  "molecules_per_composition": 256,
+  "n_compositions": 36162,
+  "native": {
+    "contour_length_nm": 302.4053265680308,
+    "mass_Da": 288337.48520000005,
+    "net_charge_pH4.2": 159.0416317618802,
+    "net_charge_pH7": 34.62065563478751,
+    "pI": 9.841738937718599,
+    "site_counts": {
+      "ARG": 161,
+      "ASN": 46,
+      "ASP": 92,
+      "CTERM": 3,
+      "GLN": 79,
+      "GLU": 143,
+      "HIS": 18,
+      "LYS": 107,
+      "OTHER": 2495,
+      "TYR": 13
+    }
+  },
+  "pKa": {
+    "ARG": 13.8,
+    "ASP": 3.9,
+    "CTERM": 3.7,
+    "GLU": 4.3,
+    "HIS": 6.5,
+    "LYS": 10.4,
+    "NTERM": 8.0,
+    "SUCC_LYS": 4.5,
+    "SUCC_NTERM": 4.5,
+    "TYR": 9.8
+  },
+  "pKa_ranges": {
+    "asp": [
+      3.65,
+      3.9,
+      4.0
+    ],
+    "glu": [
+      4.25,
+      4.3,
+      4.35
+    ],
+    "succinyl": [
+      4.35,
+      4.5,
+      4.65
+    ]
+  },
+  "seed": 20261112,
+  "soluble_at_pH7": {
+    "factor_of_native_charge": 2.0,
+    "threshold_e": 69.24131126957502
+  },
+  "stages": [
+    "map",
+    "inverse",
+    "sensitivity",
+    "assays",
+    "stagger"
+  ],
+  "stagger": {
+    "ionic_mM": [
+      10.0,
+      25.0,
+      50.0,
+      100.0,
+      150.0
+    ],
+    "native_gate": {
+      "azimuth_mean_minima": [
+        {
+          "energy_kT": -17.30398379126277,
+          "near_multiple": true,
+          "nearest_multiple": 1,
+          "offset_D": 0.007725948268166946,
+          "stagger_D": 1.0077259482681669,
+          "stagger_nm": 67.4
+        },
+        {
+          "energy_kT": -10.39900160692572,
+          "near_multiple": true,
+          "nearest_multiple": 2,
+          "offset_D": -0.014450950593285302,
+          "stagger_D": 1.9855490494067147,
+          "stagger_nm": 132.8
+        },
+        {
+          "energy_kT": -9.260231860649947,
+          "near_multiple": true,
+          "nearest_multiple": 3,
+          "offset_D": -0.0037347176121566065,
+          "stagger_D": 2.9962652823878435,
+          "stagger_nm": 200.4
+        },
+        {
+          "energy_kT": -7.141088421990972,
+          "near_multiple": false,
+          "nearest_multiple": 1,
+          "offset_D": -0.37503049499095875,
+          "stagger_D": 0.6249695050090412,
+          "stagger_nm": 41.800000000000004
+        },
+        {
+          "energy_kT": -6.744497446870296,
+          "near_multiple": false,
+          "nearest_multiple": 1,
+          "offset_D": 0.30974470427732087,
+          "stagger_D": 1.309744704277321,
+          "stagger_nm": 87.60000000000001
+        }
+      ],
+      "azimuth_mean_top3_near_multiples": true,
+      "deepest_min_over_angles_near_multiple": true,
+      "min_over_angles_minima": [
+        {
+          "energy_kT": -25.048086947222252,
+          "near_multiple": true,
+          "nearest_multiple": 1,
+          "offset_D": 0.007725948268166946,
+          "stagger_D": 1.0077259482681669,
+          "stagger_nm": 67.4
+        },
+        {
+          "energy_kT": -18.12814318011617,
+          "near_multiple": false,
+          "nearest_multiple": 1,
+          "offset_D": 0.3067544195643589,
+          "stagger_D": 1.3067544195643588,
+          "stagger_nm": 87.4
+        },
+        {
+          "energy_kT": -16.43533232651751,
+          "near_multiple": false,
+          "nearest_multiple": 0,
+          "offset_D": 0.4306009986665164,
+          "stagger_D": 0.4306009986665164,
+          "stagger_nm": 28.8
+        },
+        {
+          "energy_kT": -15.9175671461218,
+          "near_multiple": true,
+          "nearest_multiple": 2,
+          "offset_D": -0.008470381167361379,
+          "stagger_D": 1.9915296188326386,
+          "stagger_nm": 133.20000000000002
+        },
+        {
+          "energy_kT": -15.276606278809826,
+          "near_multiple": true,
+          "nearest_multiple": 3,
+          "offset_D": -0.0037347176121566065,
+          "stagger_D": 2.9962652823878435,
+          "stagger_nm": 200.4
+        }
+      ],
+      "min_over_angles_top5_near_multiples": 3,
+      "passed": true,
+      "pka_set": "repository",
+      "tolerance_D": 0.05
+    },
+    "orientations": [
+      "parallel",
+      "antiparallel"
+    ],
+    "pH": [
+      3.8,
+      4.0,
+      4.2,
+      4.4,
+      4.6
+    ],
+    "pairs": 64
+  },
+  "step": 0.025,
+  "target_pH": 4.2,
+  "task": "three-way composition scan",
+  "weights": "uniform"
+}

@@ -22,14 +22,18 @@ Three rules it does not break:
 
 ```
 python3 -m venv .venv && .venv/bin/pip install -r requirements-modcoll.txt
-.venv/bin/python -m pytest tests/modcoll              # 129 tests, about 30 s
+.venv/bin/python -m pytest tests/modcoll --ignore-glob='*test_ions*'   # 191 tests, about 50 s
 .venv/bin/python -m modcoll.cli_ensemble              # S1, about 2 min
 .venv/bin/python -m modcoll.cli_stagger --chemistry succ    # S2, about 3 min on 12 threads
 .venv/bin/python -m modcoll.cli_stagger --chemistry acet
 .venv/bin/python -m modcoll.cli_stagger --chemistry mixed
 .venv/bin/python -m modcoll.cli_stagger --chemistry succ --f 0,0.8,0.9,0.97,1 \
     --ph 3.8,4.0,4.2,4.4,4.6 --outdir results/modcoll/stagger_succ_phscan
+.venv/bin/python -m modcoll.cli_composition           # composition scan, about 16 min on 12 threads
 ```
+
+The tests of the ion model (`tests/modcoll/test_ions_*`) are described in
+`docs/modified_collagen_ions.md`; they need numba to finish in reasonable time.
 
 Results land in `results/modcoll/`: CSV/JSON summaries and PNG figures are
 committed, the per-pair table and the profile arrays go to `raw/` and are
@@ -351,7 +355,8 @@ separately because the isoelectric point alone cannot tell them apart:
   realistic f = 0.9. A measured pI of 4.2 therefore points to near-complete
   succinylation plus something else that this table does not fix: some
   deamidation, or pKa values 0.1 lower than assumed. Measured: 4.01 at 90 %
-  succinylation (Xu et al. 2017).
+  succinylation (Xu et al. 2017). The composition scan below maps every
+  mixture of the three chemistries that gives 4.2.
 - The pI drops steeply between f = 0.1 and 0.3 and that is where molecules
   differ most: the molecule-to-molecule standard deviation of the pI is 0.7 pH
   units at f = 0.1-0.2 for succinylation (single molecules from 5.4 to 9.4 at
@@ -488,6 +493,436 @@ Not run here, cheap to add with the existing options: S2 with the
 `crosslink_sites` weighting (`--weights`), with pepsin-cut ends
 (`--telopeptides pepsin`), and with the succinyl and Asp pKa varied.
 
+## Composition scan: which mixtures fit, and what holds for all of them (`results/modcoll/composition/`)
+
+What the material is made of is not known. Its lysines may be succinylated,
+acetylated or both, and its Asn/Gln may be deamidated. What is known is that
+it precipitates near pH 4.2 and is soluble at pH 7. `modcoll/cli_composition.py`
+therefore turns the question round: it scans the three fractions together and
+asks which mixtures are compatible with those two observations, what would
+tell them apart at the bench, and which results of S2 hold for all of them.
+
+A composition is (f_succ, f_acet, f_deam): the mean fractions of amines
+carrying a succinyl group, of amines carrying an acetyl group (f_succ +
+f_acet <= 1, an amine carries one group) and of Asn/Gln converted to Asp/Glu.
+The grid has a spacing of 0.025 in all three, 861 x 41 = 35 301 compositions,
+plus the slice f_deam = 0.18 (**liming reference**: liming lowers amide
+nitrogen by about 0.6 % of total nitrogen, Beek & Sookne 1939, which is 18 % of
+the Asn + Gln of the sequence, and the same fraction brings the native
+isoelectric point of this model from 9.8 to 9.0). At every composition 256
+molecules are modified site by site by `modify()`, each with its own pattern;
+seed 20261112; recommended pKa set, intact chain ends and human sequence unless
+a table says otherwise.
+
+### How it is computed (`modcoll/composition.py`)
+
+- **Counts, not a mean field.** With independent-site protonation the net
+  charge of a molecule depends on its pattern only through how many sites of
+  each type it has: `Q(pH) = sum_t n_t q_t(pH)`, with `q_t` the
+  Henderson-Hasselbalch charge of one site of type t. This is an identity (a
+  test compares it with `electrostatics.net_charge` molecule by molecule), so
+  each sampled molecule is reduced to its vector of type counts, and charges
+  and isoelectric points of the nine million sampled molecules are then
+  solved by bisection in bulk. Where the modified sites are, as opposed to how many
+  there are, matters for pair energies only, and is kept in the stagger stage.
+- **Two isoelectric points.** `pI_ensemble` is the pH at which the summed
+  charge of the 256 molecules is zero: what a precipitation maximum or a
+  mobility zero of the bulk material corresponds to, and the number the
+  inverse problem uses. Its standard error is from a bootstrap over molecules
+  (200 resamples). `pI_molecule_*` are the mean, the molecule-to-molecule sd,
+  the standard error of the mean, and the range of the isoelectric points of
+  the single molecules.
+- **Standard errors.** Every tabulated mean has one: sd between molecules /
+  sqrt(256) for charges, the bootstrap for the sample isoelectric point.
+- **Charge per unit length** is the net charge divided by the axial extent of
+  the site array, 302.4 nm (helix 290.4 nm plus telopeptides).
+- **Nested patterns.** Molecule k uses the same random deviates at every
+  composition, so its pattern grows monotonically with each fraction. Maps
+  are therefore smooth and region boundaries do not flicker, at the price
+  that values at neighbouring compositions are not independent samples.
+
+### Forward map
+
+Files: `forward_map.csv`, `pure_chemistries.csv`, `fig_forward_map.png`.
+
+`forward_map.csv` holds the grid at a spacing of 0.1 plus the liming slice
+(792 rows, flagged `liming_reference`); the full grid is regenerated under
+`raw/`. A few rows, as succinylated / acetylated / deamidated fractions:
+
+| composition | isoelectric point of the sample | sd between molecules | net charge at pH 4.2, mean (sd) | net charge at pH 7.0 | charge per nm at pH 7.0 |
+|---|---|---|---|---|---|
+| 0 / 0 / 0, unmodified | 9.84 | 0 | +159.0 | +34.6 | +0.11 |
+| 0 / 0 / 0.18, liming only | 9.12 | 0.40 | +147.2 (2.2) | +12.2 | +0.04 |
+| 1 / 0 / 0 | 4.288 | 0 | +16.3 | -179.0 | -0.59 |
+| 0.9 / 0 / 0 | 4.371 | 0.024 | +30.6 (3.9) | -157.6 | -0.52 |
+| 0.9 / 0 / 0.18 | 4.298 | 0.024 | +18.8 (4.4) | -180.0 | -0.60 |
+| 0 / 1 / 0 | 4.641 | 0 | +52.0 | -72.3 | -0.24 |
+| 0 / 1 / 0.18 | 4.498 | 0.022 | +40.2 (2.2) | -94.7 | -0.31 |
+| 0 / 0 / 1 | 4.736 | 0 | +93.4 | -90.2 | -0.30 |
+| 0.5 / 0.5 / 0 | 4.420 | 0.016 | +34.1 (1.8) | -125.9 | -0.42 |
+| 0.5 / 0.5 / 0.5 | 4.206 | 0.017 | +1.2 (3.3) | -188.5 | -0.62 |
+| 0 / 1 / 0.5 | 4.318 | 0.020 | +19.1 (2.8) | -135.0 | -0.45 |
+| 0 / 1 / 1 | 4.132 | 0 | -13.6 | -197.1 | -0.65 |
+| 1 / 0 / 0.5 | 4.124 | 0.012 | -16.6 (2.8) | -241.6 | -0.80 |
+| 1 / 0 / 1, everything modified | 4.001 | 0 | -49.3 | -303.8 | -1.00 |
+
+- The three pure-chemistry axes are the S1 ensembles and reproduce the S1
+  table: 9.84, 4.29 at complete succinylation, 4.37 at 90 %, 4.64 at complete
+  acetylation, 4.74 at complete deamidation.
+- Standard errors are small against everything discussed below: at most
+  0.0034 on the isoelectric point of the sample for any composition within
+  4.2 +- 0.3, and at most 0.5 e (pH 4.2) and 0.8 e (pH 7.0) on a mean net
+  charge anywhere on the grid.
+- **The isoelectric point has a floor at 4.00**, reached with every lysine
+  succinylated and every amide deamidated. Nothing in this composition space
+  goes below it, so a target of 4.2 sits 0.2 above the lowest value the model
+  can produce and 0.09 below what complete succinylation alone gives.
+- A sample whose isoelectric point is 4.2 is not a sample of neutral
+  molecules at pH 4.2. At 0.5 / 0.5 / 0.5 the mean net charge is +1.2 e, the
+  sd between molecules 3.3 e, and 61 % of the molecules are net positive.
+  Over the 974 grid compositions whose isoelectric point is within 0.01 of
+  4.2, the sd between molecules is 2.4 to 6.8 e and 22 to 77 % of the
+  molecules are net positive; only compositions without pattern randomness
+  (every fraction 0 or 1) have identical molecules.
+- At pH 7 every heavily modified composition is strongly negative: -0.24 e/nm
+  for complete acetylation, -0.59 e/nm for complete succinylation, -1.0 e/nm
+  with full deamidation on top. With the Bjerrum length of 0.71 nm these are
+  Manning parameters of 0.17 to 0.71, below the condensation threshold of 1.
+
+### Inverse problem
+
+Files: `region_summary.csv`, `consistent_region.csv`, `min_succinylation.csv`, `fig_consistent_region.png`, `fig_min_succinylation.png`.
+
+Two observations are matched.
+
+1. **Precipitation near pH 4.2.** The isoelectric point of the sample is
+   required to be 4.2 within a tolerance band. How a precipitation pH maps
+   onto an isoelectric point is itself uncertain, so everything is reported
+   for three bands: +-0.1, +-0.2 and +-0.3.
+2. **Solubility at pH 7.** The model computes no solubility. As a stand-in
+   the molecule is required to carry at pH 7.0 at least twice the net charge
+   of unmodified collagen at that pH (2 x 34.6 = 69 e), unmodified collagen
+   being what does assemble there (`--soluble-factor`). This turns out not to
+   constrain anything: the least charged composition in the widest band still
+   carries -95 e (`solubility_threshold.csv`; the threshold would have to
+   exceed 95 e to remove a single composition, and at 150 e two thirds of the
+   +-0.3 set are still there). **Solubility at pH 7 follows from the
+   isoelectric point being near 4.2 and adds no information about the
+   composition.**
+
+| | 4.2 +- 0.1 | 4.2 +- 0.2 | 4.2 +- 0.3 |
+|---|---|---|---|
+| consistent compositions, of 36 162 on the grid | 9 180 (25 %) | 16 108 (45 %) | 21 485 (59 %) |
+| succinylation alone | from 98.5 % | from 86.7 % | from 75.7 % |
+| acetylation alone | never (stops at 4.64) | never | never |
+| deamidation alone | never (stops at 4.74) | never | never |
+| least total acylation of any consistent composition | 50 % | 37.5 % | 25 % |
+| least succinylation, no deamidation | 95 % | 57.5 % | 30 % |
+| least succinylation, deamidation at most the liming level | 65 % | 27.5 % | 0 (with complete acetylation) |
+| least succinylation, any deamidation | 0 | 0 | 0 |
+| a composition without succinylation needs at least | 70 % acetylation and 55 % deamidation | 52.5 % and 35 % | 35 % and 18 % |
+| smallest net charge at pH 7.0 in the set | -141 e | -116 e | -95 e |
+
+Said plainly:
+
+- **The isoelectric point does not identify the composition.** Between a
+  quarter and six tenths of all compositions on the grid are consistent with
+  it, depending on the band. The consistent set is a thick slab across
+  composition space (`fig_consistent_region.png`), not a point or a line.
+- **Pure succinylation can reach it**, but for the narrow band only when it is
+  essentially complete (98.5 %); the reported 90 % gives 4.37, inside +-0.2.
+- **Pure acetylation cannot**, in any band: complete acetylation stops at 4.64.
+- **Pure deamidation cannot**, in any band: complete deamidation stops at 4.74.
+- **No succinylation is needed at all.** Acetylation of 70 % or more of the
+  lysines together with deamidation of 55 % or more of the amides gives 4.2
+  +- 0.1 without a single succinyl group. What a solution does need is
+  acylation of some kind: at least 50 %, 37.5 % or 25 % of the amines, for the
+  three bands.
+- How much succinylation is needed depends on how much deamidation is
+  allowed (`fig_min_succinylation.png`). If the material is no more
+  deamidated than limed hide (0.18), a solution needs at least 65 %
+  succinylation for +-0.1 and 27.5 % for +-0.2, the remaining lysines being
+  acetylated; for +-0.3 complete acetylation with liming-level deamidation is
+  already inside (4.498). With no deamidation at all the figures are 95 %,
+  57.5 % and 30 %.
+- The lower edge of the band matters only for +-0.1: compositions that are
+  both heavily succinylated and heavily deamidated fall below 4.1 (complete
+  succinylation with more than about 58 % deamidation).
+
+`consistent_region.csv` lists the consistent compositions on the 0.1 grid and
+the liming slice with the narrowest band each falls in; the 0.025 grid is under
+`raw/`. Compositions within two standard errors of a band edge are flagged
+(6 % of the consistent compositions of the fine grid).
+
+### Sensitivity of the consistent set
+
+Files: `sensitivity.csv`, `sensitivity_statements.csv`, `sensitivity_min_succinylation.csv`, `fig_sensitivity.png`.
+
+The inverse problem is repeated for all 108 combinations of
+
+- the succinyl carboxyl pKa: 4.35, **4.5**, 4.65 (no measurement exists);
+- the Asp pKa: 3.65, **3.9**, 4.0 (Thurlkill et al. 2006; Grimsley et al. 2009;
+  Nozaki & Tanford 1967);
+- the Glu pKa: 4.25, **4.3**, 4.35 (Thurlkill et al. 2006; Platzer et al. 2014);
+- the chain ends: **intact**, pepsin-cut (resampled: 105 lysines and three
+  free alpha-amines, which are acylated like lysines);
+- the sequence: **human**, or human without the four alpha2 histidines
+  (helix positions 486, 876, 980, 995) that bovine and porcine alpha2 lack.
+  Modification never touches histidine, so this is the same sample with four
+  fewer protonated groups per molecule; a test checks that against sampling
+  the corrected molecule.
+
+One parameter at a time, band +-0.2 (base case in the first row):
+
+| changed | isoelectric point at complete succinylation | succinylation alone enters +-0.2 at | least succinylation, deamidation at most liming | acetylation alone stops at | deamidation alone stops at | consistent compositions |
+|---|---|---|---|---|---|---|
+| nothing | 4.288 | 86.7 % | 27.5 % | 4.641 | 4.736 | 16 108 |
+| succinyl pKa 4.35 | 4.241 | 81.6 % | 22.5 % | 4.641 | 4.736 | 17 110 |
+| succinyl pKa 4.65 | 4.334 | 92.0 % | 32.5 % | 4.641 | 4.736 | 15 010 |
+| Asp pKa 3.65 | 4.234 | 81.2 % | 10 % | 4.580 | 4.681 | 18 998 |
+| Asp pKa 4.0 | 4.312 | 89.4 % | 37.5 % | 4.670 | 4.764 | 14 388 |
+| Glu pKa 4.25 | 4.266 | 83.9 % | 17.5 % | 4.606 | 4.700 | 17 785 |
+| Glu pKa 4.35 | 4.310 | 89.3 % | 37.5 % | 4.677 | 4.773 | 14 354 |
+| pepsin-cut ends | 4.267 | 84.2 % | 22.5 % | 4.612 | 4.745 | 16 857 |
+| bovine / porcine histidines | 4.267 | 84.0 % | 20 % | 4.602 | 4.708 | 17 436 |
+
+Each of these moves the isoelectric point of a heavily modified molecule by
+0.02 to 0.05; together they span 4.12 to 4.38 for complete succinylation.
+The least succinylation needed at a given deamidation is the sensitive
+quantity: it swings by tens of per cent (shaded range in
+`fig_min_succinylation.png`).
+
+**Statements that hold in all 108 parameter sets:**
+
+1. Deamidation alone never reaches the isoelectric point, in any band (it
+   stops between 4.61 and 4.81).
+2. Acetylation alone never reaches 4.2 +- 0.1 or +- 0.2 (it stops between 4.47
+   and 4.70).
+3. Succinylation alone reaches 4.2 +- 0.2 and +- 0.3 (from 70-98 % and from
+   61-86 % succinylation).
+4. A consistent composition without any succinylation exists, in every
+   band. The minimum succinylation any solution needs is zero.
+5. Every consistent composition has a substantial share of its amines
+   acylated: at least 32.5 % for +-0.1, 20 % for +-0.2 and 10 % for +-0.3.
+6. The solubility criterion at pH 7 never excludes a composition; the least
+   charged consistent composition carries 71 e or more.
+7. The consistent set is large: 15-32 %, 32-58 % and 48-75 % of the grid for
+   the three bands.
+
+**Statements that do not survive:**
+
+- "Succinylation alone reaches 4.2 +- 0.1" holds in 83 of the 108 sets. In the
+  other 25 complete succinylation stays above 4.3.
+- "Acetylation alone does not reach 4.2 +- 0.3" fails in 3 of the 108 sets:
+  Asp 3.65 and Glu 4.25 together with pepsin-cut ends and the bovine/porcine
+  histidines, where complete acetylation gives 4.47 (the three differ only in
+  the succinyl pKa, which does not enter).
+- How much succinylation is needed when deamidation is limited: without
+  deamidation, 37.5 % to 97.5 % for +-0.1 (and no solution at all in 25 sets),
+  15 % to 92.5 % for +-0.2, 0 to 52.5 % for +-0.3; with deamidation at most the
+  liming level, 10 % to 97.5 %, 0 to 57.5 % and 0 to 20 %.
+
+### Which measurement would identify the composition
+
+Files: `assays.csv`, `assays_representatives.csv`, `assay_ranking.csv`, `assay_sets.csv`, `titration_curves.csv`, `fig_assays.png`, `fig_titration.png`.
+
+For every consistent composition (spacing 0.05; 2 206 candidates for +-0.2)
+`composition.assay_readouts` computes what a bulk measurement would read.
+Each readout is linear in the type counts, or the zero of a linear function
+of them, so the bulk value is exact for the sampled molecules:
+
+| readout | definition |
+|---|---|
+| free amines remaining | unmodified amines / amines of the unmodified molecule (a TNBS-type assay against the unmodified control) |
+| amide content | Asn + Gln left, per molecule and in mmol/g |
+| carboxyl content | Asp + Glu + chain C-termini + succinyl carboxyls, per molecule and in mmol/g |
+| mass shift | +100.016 Da per succinyl, +42.011 Da per acetyl, +0.984 Da per deamidated amide (monoisotopic; the average-mass values are 100.073, 42.037, 0.985), on an unmodified molecule of 288 kDa computed from the sequence |
+| net charge against pH | the titration curve; tabulated at pH 3, 5.5, 7, 9, with the zero crossing and the slope dQ/dpH there |
+| salt shift of the zero crossing | zero-charge pH at 150 mM minus at 10 mM, with pKa' = pKa -+ A F(I), F(I) = sqrt(I)/(1 + sqrt(I)) - 0.3 I, A = 0.509 (Davies 1962): acids get stronger with salt, bases weaker |
+
+The assays are ranked by the share of pairs of candidates they tell apart: a
+measurement made on candidate i excludes candidate j if their predicted
+readouts differ by more than two standard deviations of the assay. The
+precisions are **assumptions**, listed in `composition.ASSAYS`, and the ranking
+is repeated with each halved and doubled. "Left open" is the span of each
+fraction among the candidates one measurement would not exclude, averaged
+over the candidates; before any measurement it is about 1 for all three.
+
+| rank | assay (assumed 1 sd) | range over the candidates | pairs told apart (sd halved / doubled) | left open: succinyl / acetyl / deamidation |
+|---|---|---|---|---|
+| 1 | amide content (6 per molecule) | 0 to 125 | 83 % (94 / 63) | 0.98 / 0.98 / 0.10 |
+| 2 | mass shift of intact chains (300 Da per molecule) | 2.6 to 10.8 kDa | 83 % (91 / 66) | 0.36 / 0.69 / 0.86 |
+| 3 | free amines remaining (0.03) | 0 to 0.60 | 68 % (88 / 51) | 0.88 / 0.88 / 0.90 |
+| 4 | carboxyl content (5 %) | 282 to 470 | 46 % (71 / 13) | 0.96 / 0.96 / 0.91 |
+| 5 | net charge at pH 7 (10 %) | -304 to -116 e | 44 % (70 / 12) | 0.98 / 0.99 / 0.97 |
+| 6 | titration slope at the zero crossing (10 %) | -240 to -144 e/pH | 15 % (48 / 1) | 1.00 / 1.00 / 1.00 |
+| 7 | zero-charge pH (0.1) | 4.0 to 4.4 | 14 % (46 / 0) | 1.00 / 1.00 / 1.00 |
+| 8 | net charge at pH 3 (10 %) | +149 to +216 e | 8 % (38 / 0) | 1.00 / 1.00 / 1.00 |
+| 9 | salt shift of the zero-charge pH (0.05) | -0.074 for every candidate | 0 % | 1.00 / 1.00 / 1.00 |
+
+Four compositions with the same isoelectric point, 4.20, and 90 %
+succinylation for comparison (`assays_representatives.csv`):
+
+| succinyl / acetyl / deamidated | free amines | amides per molecule | carboxyls per molecule | mass shift | net charge at pH 7 |
+|---|---|---|---|---|---|
+| 1.00 / 0 / 0.25 | 0 % | 94 | 376 | +10.7 kDa | -210 e |
+| 0 / 0.90 / 0.95 | 10 % | 6 | 357 | +4.2 kDa | -180 e |
+| 0 / 1.00 / 0.80 | 0 % | 25 | 338 | +4.6 kDa | -172 e |
+| 0.35 / 0.40 / 1.00 | 25 % | 0 | 401 | +5.7 kDa | -208 e |
+| 0.90 / 0 / 0 (isoelectric point 4.37) | 10 % | 125 | 334 | +9.6 kDa | -158 e |
+
+- **Three assays do the work, and each fixes a different direction.** The
+  amide content gives the deamidated fraction and nothing else. The free
+  amines give the total acylation but cannot tell succinyl from acetyl. The
+  mass shift tells them apart (100 against 42 Da per group) but confounds a
+  little succinyl with a lot of acetyl. The order of these three is the same
+  for the three bands and for halved or doubled precisions, except that mass
+  and amide content swap first and second place for +-0.1 (81 against 80 %).
+- **Together they identify the composition**: free amines + amide content +
+  mass shift tell 98.8 % of candidate pairs apart and leave spans of 0.18 in
+  succinylation, 0.25 in acetylation and 0.10 in deamidation, that is about
+  +-0.09, +-0.13 and +-0.05. The best pairs are amide content + mass shift
+  (97 %) and free amines + mass shift (93 %, but blind to deamidation).
+  Carboxyl content can stand in for mass (free amines + amide + carboxyl:
+  96 %, spans 0.58 / 0.62 / 0.10) at a clear loss.
+- **Titration and electrokinetics discriminate poorly.** All candidates cross
+  zero within the band by construction and their curves run together from pH
+  3.5 to 5 (`fig_titration.png`); they separate only on the alkaline plateau,
+  where the net charge at pH 7 is carboxyls minus arginines minus free
+  lysines: a single number that mixes all three fractions.
+- **Null result: the salt shift of the zero-charge pH is the same for every
+  candidate**, -0.074 pH between 10 and 150 mM (to within 0.0003). Near pH 4.2
+  only carboxyls titrate, every carboxyl pKa moves by the same -A dF, and the
+  bases stay fully protonated, so the crossing moves by that amount whatever
+  the composition. In this model the assay cannot discriminate at all.
+
+### Do the S2 conclusions depend on the composition?
+
+Files: `stagger_representatives.csv`, `stagger_summary.csv`, `stagger_conclusions.csv`, `stagger_crossover.csv`, `fig_stagger_robustness.png`, `fig_stagger_crossover.png`.
+
+Eight compositions were picked to span the +-0.3 set (its six extremes, ties
+broken by the isoelectric point nearest 4.2, then the two compositions
+farthest from all those already chosen), and 90 % succinylation was added as
+the case S2 treats as realistic. The S2 two-molecule scan was run on each,
+unchanged (`cli_stagger`'s pattern generators, pair descriptors and summary;
+a test checks that a pure-chemistry composition gives exactly what
+`cli_stagger` writes): pH 3.8, 4.0, 4.2, 4.4, 4.6; 10, 25, 50, 100, 150 mM; 64
+pattern pairs; parallel and antiparallel. 25 and 100 mM were added to the
+three ionic strengths of S2 to bracket the crossover.
+
+| | succinyl / acetyl / deamidated | chosen as | isoelectric point | net charge at pH 4.2, mean (sd) |
+|---|---|---|---|---|
+| c0 | 1.00 / 0 / 0.25 | most succinylation | 4.20 | 0 (2.5) |
+| c1 | 0 / 0.90 / 0.95 | least succinylation | 4.20 | 0 (3.2) |
+| c2 | 0 / 1.00 / 0.80 | most acetylation | 4.20 | 0 (2.4) |
+| c3 | 0.35 / 0.40 / 1.00 | most deamidation | 4.20 | 0 (5.4) |
+| c4 | 1.00 / 0 / 0 | least deamidation | 4.29 | +16 |
+| c5 | 0.25 / 0 / 1.00 | least acylation | 4.48 | +58 (6.0) |
+| c6 | 0.35 / 0.65 / 0 | farthest from the others | 4.47 | +39 (1.7) |
+| c7 | 1.00 / 0 / 1.00 | farthest from the others | 4.00 | -49 |
+| c8 | 0.90 / 0 / 0 | S2 reference | 4.37 | +31 (3.9) |
+
+Row c8 reproduces the committed S2 numbers (pH 4.2: 1.01 D, -23.7 (0.9) kT,
+100 % at 150 mM; -26.4 (1.6) kT, 97 % at 50 mM; 0.58 D, -37.9 (2.7) kT, 0 % at
+10 mM).
+
+| S2 conclusion | read from | over the nine compositions | verdict |
+|---|---|---|---|
+| at 150 mM every pattern pair prefers a D multiple, at every pH from 3.8 to 4.6 | share of pairs whose deepest minimum is within 3 nm of a D multiple, worst pH | 100 % at all nine | **holds** |
+| that register is 1 D | deepest minimum of the pair-averaged profile, pH 4.2 | 1.01 D at all nine | **holds** |
+| its depth is that of native collagen at pH 7.4 | each pair's deepest minimum, pH 4.2, 150 mM | -20.8 to -23.8 kT | **holds** (within 3 kT) |
+| pattern pairs agree | pair-to-pair sd of the deepest minimum, pH 4.2 | 0 to 1.3 kT at 150 mM, 0 to 3.1 kT at 10 mM | **holds** |
+| parallel is not preferred over antiparallel | antiparallel minus parallel deepest minimum, pH 4.2, 150 mM | -1.8 to -4.3 kT | **holds** (still no polarity selection) |
+| at 10 mM the D register is lost | share of pairs at a D multiple, 10 mM | at each composition's own isoelectric point: 0 to 6 % at all nine. At pH 4.2: 0 to 6 % for eight, 25 % for c5 | **holds at the isoelectric point**; at a fixed pH it depends on how far that pH is from it |
+| ... at every pH from 3.8 to 4.6 | the same, worst pH | 0 % for c0, c4, c6, c7; 20 to 92 % for c1, c2, c3, c5; 33 % for c8 | **depends on composition** |
+| which register replaces it | deepest minimum of the pair-averaged profile, 10 mM, pH 4.2 | 0.58 D (c0, c2, c4, c7, c8), 0.61-0.62 D (c1, c3), 1.99 D (c5), 2.21 D (c6) | **depends on composition** |
+| 50 mM is the crossover | ionic strength at which half the pairs prefer a D multiple | at each composition's own isoelectric point: 33 to 48 mM. At pH 4.2: 19 to 71 mM; at pH 4.6: 38 to 122 mM | **holds at the isoelectric point** (factor 1.5); at a fixed pH it depends on composition (factor 3.6) |
+| the profile repeats with the D period | dominant period of the profile, pH 4.2, 150 mM | 67.0-67.2 nm for six; 91 nm for the three with complete succinylation (c0, c4, c7) | **depends**: lost only at complete succinylation, as in S2 |
+| electrostatics does not select the D register | D-comb z-score of the electrostatic term, pH 4.2, 150 mM | 0.10 to 0.72 for c0, c4, c6, c7, c8; 1.15 to 1.21 for c1, c2, c3, c5 | **depends on composition** |
+
+What this says:
+
+1. **The headline of S2 does not depend on the composition.** At 150 mM every
+   one of the nine compositions has its deepest minimum at 1 D for every
+   pattern pair at every pH from 3.8 to 4.6, 21 to 24 kT deep, with pairs
+   agreeing within about 1 kT. It carries the caveat it had in S2: this
+   register comes from the hydrophobic term, which modification does not
+   change in this model.
+2. **At its own isoelectric point every composition behaves alike in salt.**
+   The D register is lost at 10 mM (at most 6 % of pairs keep a D multiple)
+   and comes back between 33 and 48 mM, whether the charge was removed by
+   succinylation, by acetylation with deamidation, or by a mixture. If the
+   precipitation pH is the isoelectric point, the statement "below about 30 mM
+   the pair register is not a D multiple, above about 50 mM it is 1 D" holds
+   without knowing the composition. For the two compositions without pattern
+   randomness (c4, c7) the crossover is resolved only to the interval between
+   two scanned ionic strengths.
+3. **Away from the isoelectric point the chemistry shows.** On the acid side
+   (pH 3.8-4.0, molecules at +40 to +80 e) compositions built on acetylation
+   and deamidation keep a D multiple, 2 D, down to 10 mM in 73-75 % of pairs
+   (c1, c3), where succinyl-rich ones have lost it entirely. On the alkaline
+   side, at a like net charge, succinyl-rich compositions need about twice
+   the salt: at pH 4.6, c0 (-78 e) needs 75 mM where c1 and c2 (-72, -69 e)
+   need 42 and 38 mM (`fig_stagger_crossover.png`).
+4. **Which off-D register appears at low salt depends on the composition**:
+   0.58 D for succinyl-rich and fully acetylated compositions at their
+   isoelectric point, 0.61-0.62 D with heavy deamidation, 1.99 D or 2.21 D
+   where the molecules are still net positive at pH 4.2. S2's "0.58 D or
+   2.21 D" is the succinylation case.
+5. **"Modification removes the weak electrostatic D-selectivity" is a
+   statement about succinylation.** In the four compositions with heavy
+   deamidation and incomplete succinylation the electrostatic term alone
+   keeps a D-comb z-score of about 1.2, near the 1.4 of unmodified collagen;
+   it is 0.1 to 0.7 in the others. It is too weak in either case to set the
+   register against the hydrophobic term.
+6. The loss of the 67 nm period of the whole profile is specific to
+   complete succinylation and returns at 90 %.
+
+### What the scan cannot determine
+
+- **The composition.** The isoelectric point is one number and the
+  composition has three; the consistent set is a slab that fills a quarter to
+  more than half of composition space. Nothing in the two observations (where
+  it precipitates, that it dissolves at pH 7) can narrow it further in this
+  model. The assays above can.
+- **Whether precipitation pH equals the isoelectric point.** The bands stand
+  in for that. Measured isoelectric points of succinylated collagens span 3.5
+  to 4.8 depending on method and electrolyte (Zhang et al. 2007; Miyata et al.
+  1979, US 4,164,559; Miyata & Dunn 1988, US 4,748,152); a band of +-0.3 does
+  not cover that whole span.
+- **Solubility.** "Soluble at pH 7" is a threshold on the net charge. The model
+  computes no solubility, and the threshold happens not to matter: no
+  composition in any band comes near it.
+- **Ion binding.** The zero-charge pH here is the zero of the proton charge.
+  An electrokinetic isoelectric point also moves with bound or accumulated
+  ions, by two pH units for native collagen between 0.1 and 10 mM KCl
+  (Freudenberg et al. 2007). The salt shift computed here (-0.07 pH from 10 to
+  150 mM, the same for every composition) is the activity-coefficient effect
+  only; that it does not discriminate says the model has no
+  composition-dependent salt effect, not that an experiment would show none.
+- **Charge regulation and site coupling.** Every site titrates on its own
+  with a model-compound pKa. The pKa ranges of the sensitivity scan are the
+  nearest thing to an error bar on that.
+- **Chemistry outside the three fractions.** O-acylation of tyrosine and
+  other hydroxyls (a few per cent of the amide content in gelatin, Zhu et al.
+  2019) would add carboxyls that no fraction here represents. Telopeptide
+  lysines that are aldehydes or cross-linked cannot be acylated; here all 107
+  lysines are amines. Reactivity is uniform over sites (`--weights` changes
+  that; S1 found the isoelectric point moves by at most 0.02 with the
+  cross-link-site weighting).
+- **Assay precision.** The ranking rests on assumed precisions. It is stable
+  when each is halved or doubled, but it is a ranking of predicted readouts,
+  not of instruments. Trinitrobenzenesulfonate on a native helix counts only
+  about half the amines the sequence has (0.184 mmol/g found, Zhang et al.
+  2007, against 0.37 mmol/g), so the free-amine readout is meaningful relative
+  to the unmodified control, not as an absolute content. Intact-chain mass
+  cannot see deamidation: 125 amides are 123 Da on 288 kDa.
+- **More than nine compositions.** The stagger scan was run on eight
+  compositions chosen to span the +-0.3 set and on 90 % succinylation.
+  "Holds across the region" means at those nine, at pH 3.8-4.6 and 10-150 mM.
+  Everything S2 says about its own limits (the hydrophobic strength, fixed
+  separation, Debye-Hueckel) applies unchanged.
+
 ## Known limits
 
 Read the results above through these.
@@ -546,8 +981,14 @@ modcoll/sites.py           site array, geometry, telopeptides
 modcoll/modify.py          quenched random modification, reactivity weights
 modcoll/electrostatics.py  pKa, Henderson-Hasselbalch, Debye-Hueckel, direct pair sum
 modcoll/stagger.py         FFT stagger scan, angle reductions, profile analysis, native gate
+modcoll/composition.py     type counts, vectorised charge and isoelectric point, pKa
+                           variants, salt dependence of pKa, masses, assay readouts,
+                           assay ranking, choice of representative compositions
 modcoll/cli_ensemble.py    S1
 modcoll/cli_stagger.py     S2
+modcoll/cli_composition.py composition scan: forward map, inverse problem,
+                           sensitivity, assays, stagger scan across compositions
+modcoll/composition_figures.py  its figures
 modcoll/cli_common.py      CSV/JSON writers, figure style
 tests/modcoll/             pytest; oracles are closed forms, published numbers,
                            hand-built molecules and the brute-force pair sum
@@ -573,3 +1014,12 @@ results/modcoll/           committed summaries and figures
 - Xu, Guan, Liu, Fan, Chen (2017) J. Appl. Polym. Sci. 134:45424
 - Israelachvili, Intermolecular and Surface Forces, 3rd ed. (2011), ch. 14
 - Berisio, Vitagliano, Mazzarella, Zagari (2002) Protein Sci. 11:262 (PDB 1K6F)
+- Beek, Sookne (1939) J. Res. Natl. Bur. Stand. 23:271
+- Nozaki, Tanford (1967) Methods Enzymol. 11:715
+- Davies (1962) Ion Association, Butterworths, London
+- Robinson, Stokes (1959) Electrolyte Solutions, 2nd ed., Butterworths, London
+- Gasteiger et al. (2005) in The Proteomics Protocols Handbook, Humana Press, pp. 571-607
+- Freudenberg et al. (2007) Biophys. J. 92:2108
+- Miyata, Rubin, Stenzel, Dunn (1979) US Patent 4,164,559
+- Miyata, Dunn (1988) US Patent 4,748,152
+- Zhu, Wang, Ferracci, Zheng, Cho, Lee (2019) Sci. Rep. 9:6863
