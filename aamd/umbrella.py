@@ -207,11 +207,13 @@ def run_job(name, jobdir: Path, r0: float, prod_ns: float, start_state: Path,
     """Equilibrate, then produce ``prod_ns`` in chunks with checks after each."""
     jobdir.mkdir(parents=True, exist_ok=True)
     label = label or f"{name}/{jobdir.name}"
-    if (jobdir / "done.json").exists() or (jobdir / "failed.json").exists():
+    if (jobdir / "failed.json").exists() or done_ns(jobdir) >= prod_ns - 1e-9:
         return
     if not _lock(jobdir):
         return
     try:
+        if (jobdir / "done.json").exists():      # finished a shorter run: extend it
+            (jobdir / "done.json").unlink()
         _run_job(name, jobdir, r0, prod_ns, start_state, protocol, restraint, label)
     finally:
         _unlock(jobdir)
@@ -392,9 +394,11 @@ def interface_waters(pos, box, heavy, water_o, r=0.35):
     return [int(np.count_nonzero(near[0] & near[1])), int(near[0].sum()), int(near[1].sum())]
 
 
-def window(name, i, protocol=PROTOCOL):
+def window(name, i, prod_ns=None, protocol=PROTOCOL):
+    """Window i; ``prod_ns`` above the protocol's extends a finished window
+    from its last chunk."""
     wd = workdir(name)
-    run_job(name, wd / f"w{i:02d}", float(protocol.centres[i]), protocol.prod_ns,
+    run_job(name, wd / f"w{i:02d}", float(protocol.centres[i]), float(prod_ns or protocol.prod_ns),
             wd / "windows" / f"start_{i:02d}.xml", protocol)
 
 
@@ -442,6 +446,21 @@ def job_dir(job) -> Path:
     return workdir(name)
 
 
+def job_target_ns(job) -> float:
+    """Production length a window/contact job asks for: ``window NAME I [NS]``,
+    ``contact NAME R0 NS``."""
+    kind, name, *rest = job
+    if kind == "window":
+        return float(rest[1]) if len(rest) > 1 else PROTOCOL.prod_ns
+    return float(rest[1])
+
+
+def done_ns(jobdir: Path) -> float:
+    """Production length of a finished run (0 when not finished)."""
+    f = jobdir / "done.json"
+    return float(json.loads(f.read_text()).get("prod_ns", 0.0)) if f.exists() else 0.0
+
+
 def job_finished(job) -> bool:
     kind, name, *rest = job
     d = job_dir(job)
@@ -449,7 +468,7 @@ def job_finished(job) -> bool:
         return (d / "system.prmtop").exists() or (d / "failed_build.json").exists()
     if kind == "pull":
         return (d / "pull.json").exists() or (d / "failed_pull.json").exists()
-    return (d / "done.json").exists() or (d / "failed.json").exists()
+    return (d / "failed.json").exists() or done_ns(d) >= job_target_ns(job) - 1e-9
 
 
 def job_ready(job) -> bool:
@@ -495,7 +514,7 @@ def run_one(job):
         except (ProcessLookupError, ValueError):
             pass
     if kind == "window":
-        window(name, int(rest[0]))
+        window(name, int(rest[0]), job_target_ns(job))
     elif kind == "contact":
         contact(name, float(rest[0]), float(rest[1]))
     return True
@@ -509,6 +528,7 @@ def worker(k, n, jobfile):
     finished. A failed job is logged (WARNINGS) and not retried. Several
     workers share the list through the lock files; ``k`` and ``n`` only name
     the worker."""
+    import fcntl
     import subprocess
 
     while True:
@@ -521,8 +541,16 @@ def worker(k, n, jobfile):
         for job in pending:
             if not job_ready(job) or _locked_by_live(job):
                 continue
-            t0 = time.time()
-            p = subprocess.run([sys.executable, "-m", "aamd.umbrella", "job", *job])
+            # never more than n jobs at once, counting jobs left running by
+            # workers that were stopped (they finish their job on their own)
+            with open(build.WORK / "launch.lock", "a") as lk:
+                fcntl.flock(lk, fcntl.LOCK_EX)
+                if running_jobs() >= n:
+                    break
+                t0 = time.time()
+                child = subprocess.Popen([sys.executable, "-m", "aamd.umbrella", "job", *job])
+            p = child
+            p.wait()
             if time.time() - t0 < 5 and p.returncode == 0 and not job_finished(job):
                 continue                     # someone else took it first
             ran = True
@@ -531,6 +559,21 @@ def worker(k, n, jobfile):
             break
         if not ran:
             time.sleep(60)
+
+
+def running_jobs() -> int:
+    """Live ``aamd.umbrella job`` processes on this machine."""
+    n = 0
+    for d in Path("/proc").iterdir():
+        if not d.name.isdigit():
+            continue
+        try:
+            argv = (d / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if b"aamd.umbrella" in argv and b"job" in argv:
+            n += 1
+    return n
 
 
 def _locked_by_live(job) -> bool:
@@ -569,7 +612,7 @@ def main(argv=None):
     if a[0] == "pull":
         pull(a[1])
     elif a[0] == "window":
-        window(a[1], int(a[2]))
+        window(a[1], int(a[2]), float(a[3]) if len(a) > 3 else None)
     elif a[0] == "contact":
         contact(a[1], float(a[2]), float(a[3]))
     elif a[0] == "worker":

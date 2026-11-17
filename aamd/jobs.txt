@@ -1,5 +1,5 @@
 # aamd campaign jobs, taken in order by 'aamd run' workers (see aamd/umbrella.py)
-# kinds: build SYSTEM | pull SYSTEM | window SYSTEM I | contact SYSTEM R0_NM NS (one umbrella run at R0; "contact S 1.300 4.0" is the inner window added to every PMF)
+# kinds: build SYSTEM | pull SYSTEM | window SYSTEM I [NS] (a later line with a longer NS extends a finished window from its last chunk) | contact SYSTEM R0_NM NS (one umbrella run at R0; "contact S 1.300 4.0" is the inner window added to every PMF)
 pull native-05D
 window native-1D 0
 window native-1D 1
@@ -17,6 +17,14 @@ window native-1D 12
 window native-1D 13
 window native-1D 14
 contact native-1D 1.300 4.0
+# contact region (1.3-1.9 nm): statistical inefficiency 160-590 ps at 4 ns, halves differ by several kT -> extend to 16 ns
+contact native-1D 1.300 16.0
+window native-1D 0 16
+window native-1D 1 16
+window native-1D 2 16
+window native-1D 3 16
+window native-1D 4 16
+window native-1D 5 16
 build succ-1D
 build succ-05D
 build succ-1D-Ca

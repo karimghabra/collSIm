@@ -61,3 +61,12 @@ def test_statistical_inefficiency_of_ar1():
     g = pmf.statistical_inefficiency(x[:20000])
     assert g == pytest.approx((1 + phi) / (1 - phi), rel=0.2)
     assert pmf.statistical_inefficiency(rng.normal(size=5000)) < 1.2
+
+
+def test_mbar_leaves_empty_bins_nan():
+    rng = np.random.default_rng(10)
+    win = synthetic(rng, n=1000)
+    edges = np.arange(0.90, 2.86, 0.025)          # first bins lie below every sample
+    x, F, dF = pmf.mbar_pmf(win, edges)
+    assert np.all(np.isnan(F[x < 1.0]))
+    assert np.isfinite(F[(x > 1.3) & (x < 2.7)]).all()

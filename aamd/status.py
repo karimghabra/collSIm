@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 
 from . import build, checks, pmf
-from .umbrella import PROTOCOL, WARNINGS, job_dir, read_jobs, workdir
+from .umbrella import PROTOCOL, WARNINGS, done_ns as finished_ns, job_dir, job_target_ns, read_jobs, workdir
 
 JOBS = build.AAMD / "jobs.txt"
 WORKERS = build.WORK / "workers.json"
@@ -58,12 +58,14 @@ def job_state(job):
         return "queued", {}
     if (d / "failed.json").exists():
         return "FAILED", json.loads((d / "status.json").read_text()) if (d / "status.json").exists() else {}
-    if (d / "done.json").exists():
+    if finished_ns(d) >= job_target_ns(job) - 1e-9:
         return "done", json.loads((d / "status.json").read_text()) if (d / "status.json").exists() else {}
     if (d / "status.json").exists():
         s = json.loads((d / "status.json").read_text())
         lock = d / "lock"
         running = lock.exists() and _alive(lock.read_text().strip() or 0)
+        if not running and (d / "done.json").exists():
+            return "queued", s                   # finished; an extension waits
         return ("running" if running else "paused"), s
     if (d / "lock").exists() and _alive((d / "lock").read_text().strip() or 0):
         return "equilibrating", {}
@@ -100,6 +102,9 @@ def rolling_convergence(name):
 
 def status(convergence=False, out=sys.stdout):
     jobs = read_jobs(JOBS) if JOBS.exists() else []
+    # a window listed again with a longer run (an extension) counts once, as the last line
+    last = {(j[0], str(job_dir(j))): k for k, j in enumerate(jobs)}
+    jobs = [j for k, j in enumerate(jobs) if last[(j[0], str(job_dir(j)))] == k]
     w = json.loads(WORKERS.read_text()) if WORKERS.exists() else {"pids": []}
     alive = [p for p in w.get("pids", []) if _alive(p)]
     out.write(f"aamd status  {time.strftime('%Y-%m-%d %H:%M:%S')}  workers alive: {len(alive)}/"
@@ -112,7 +117,7 @@ def status(convergence=False, out=sys.stdout):
         counts[st] = counts.get(st, 0) + 1
         kind = job[0]
         if kind in ("window", "contact"):
-            total = PROTOCOL.prod_ns if kind == "window" else float(job[3])
+            total = job_target_ns(job)
             total_ns += total + PROTOCOL.eq_ns
             done_ns += s.get("ns_done", 0.0) + (PROTOCOL.eq_ns if s else 0.0)
         if st in ("running", "FAILED", "paused", "stalled", "equilibrating"):

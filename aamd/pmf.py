@@ -131,8 +131,12 @@ def mbar_pmf(win: Windows, edges):
     fes.generate_fes(np.zeros_like(x), x, fes_type="histogram",
                      histogram_parameters={"bin_edges": edges})
     xc = 0.5 * (edges[1:] + edges[:-1])
-    res = fes.get_fes(xc, reference_point="from-lowest", uncertainty_method="analytical")
-    return xc, np.asarray(res["f_i"]), np.asarray(res["df_i"])
+    # pymbar only labels bins that hold samples; ask for those, NaN elsewhere
+    occupied = np.histogram(x, edges)[0] > 0
+    F, dF = np.full(len(xc), np.nan), np.full(len(xc), np.nan)
+    res = fes.get_fes(xc[occupied], reference_point="from-lowest", uncertainty_method="analytical")
+    F[occupied], dF[occupied] = res["f_i"], res["df_i"]
+    return xc, F, dF
 
 
 def reference_shift(xc, F, ref):
