@@ -194,12 +194,26 @@ def analyse(win: Windows, edges, ref=(2.55, 2.80), n_blocks=4, estimator=mbar_pm
 
 
 # ------------------------------------------------------------- reading runs ---
-def load_windows(sysdir: Path, centres, k_kj_nm2, column=1) -> Windows:
-    """Read every finished window of a system (cv_*.npy, column 1 = Delta x)."""
+def window_dirs(sysdir: Path, centres):
+    """(centre, directory) of every umbrella run of a system, sorted by centre:
+    the regular windows wNN (centre from ``centres``) and any extra run cR.RRR
+    (centre in its name; the same spring and protocol, e.g. the inner window
+    at 1.3 nm added when the minimum turned out to sit at 1.4 nm)."""
     sysdir = Path(sysdir)
+    out = [(float(c), sysdir / f"w{i:02d}") for i, c in enumerate(centres)]
+    for d in sorted(sysdir.glob("c[0-9]*")):
+        try:
+            out.append((float(d.name[1:]), d))
+        except ValueError:
+            pass
+    return sorted(out)
+
+
+def load_windows(sysdir: Path, centres, k_kj_nm2, column=1) -> Windows:
+    """Read every umbrella run of a system that has data (cv_*.npy, column 1 = Delta x)."""
     series, times, cs, ks = [], [], [], []
-    for i, c in enumerate(centres):
-        files = sorted((sysdir / f"w{i:02d}").glob("cv_*.npy"))
+    for c, d in window_dirs(sysdir, centres):
+        files = sorted(d.glob("cv_*.npy"))
         if not files:
             continue
         a = np.concatenate([np.load(f) for f in files])

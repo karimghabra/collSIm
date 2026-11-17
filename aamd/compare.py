@@ -34,14 +34,15 @@ from . import build, pmf
 from .umbrella import PROTOCOL
 
 RESULTS = build.AAMD / "results"
-EDGES = np.arange(1.30, 2.951, 0.02)
+EDGES = np.arange(1.20, 2.951, 0.02)
 REF = (2.55, 2.80)
 
 
 def analysed_pmf(name):
     d = build.WORK / name
     win = pmf.load_windows(d, PROTOCOL.centres, PROTOCOL.k_umb)
-    if len(win.series) < len(PROTOCOL.centres):
+    runs = pmf.window_dirs(d, PROTOCOL.centres)
+    if len(win.series) < len(runs) or not all((r / "done.json").exists() for _, r in runs):
         return None
     res = pmf.analyse(win, EDGES, ref=REF)
     pmf.save(res, RESULTS / f"pmf_{name}.json",
@@ -81,9 +82,9 @@ def short_range(res, sysdir, centres):
             decay = {"lambda_nm": float(-1.0 / slope), "A_kT": float(np.exp(icpt)), "n_points": len(pts)}
     m = (res.x >= 2.0) & (res.x <= 2.5) & np.isfinite(res.F)
     water = []
-    for i, c in enumerate(centres):
-        files = sorted((sysdir / f"w{i:02d}").glob("hyd_*.npy"))
-        cvf = sorted((sysdir / f"w{i:02d}").glob("cv_*.npy"))
+    for c, wdir in pmf.window_dirs(sysdir, centres):
+        files = sorted(wdir.glob("hyd_*.npy"))
+        cvf = sorted(wdir.glob("cv_*.npy"))
         if files and cvf:
             h = np.concatenate([np.load(f) for f in files])
             cv = np.concatenate([np.load(f) for f in cvf])

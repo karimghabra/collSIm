@@ -1,0 +1,136 @@
+{
+ "system": "native-1D",
+ "windows": [
+  0
+ ],
+ "frames": 178,
+ "contacts_per_frame": 19.241573033707866,
+ "residue_pairs_seen": 86,
+ "share_by_class": {
+  "apolar-apolar": 0.21401459854014596,
+  "charged-charged": 0.17138686131386857,
+  "apolar-imino": 0.1553284671532847,
+  "charged-polar": 0.13810218978102193,
+  "apolar-polar": 0.12175182481751824,
+  "charged-imino": 0.07211678832116789,
+  "polar-polar": 0.05868613138686131,
+  "imino-imino": 0.04817518248175182,
+  "imino-polar": 0.0183941605839416,
+  "apolar-charged": 0.002043795620437956
+ },
+ "atom_contacts_share": {
+  "C-C": 0.39961804726665073,
+  "C-polar": 0.4200684331980584,
+  "polar-polar": 0.18031351953529084
+ },
+ "spearman_freq_vs_h_product": 0.25542466787836976,
+ "spearman_freq_vs_h_product_attractive": 0.372200503465087,
+ "share_of_contacts_on_pairs_coarse_calls_attractive": 0.6344525547445254,
+ "top_pairs": [
+  {
+   "res_a": "GLN",
+   "res_b": "GLY",
+   "freq": 0.9887640449438202,
+   "h_product": -1.1088642257177426,
+   "classes": "polar-polar"
+  },
+  {
+   "res_a": "GLN",
+   "res_b": "LYS",
+   "freq": 0.9662921348314607,
+   "h_product": 8.296969636045098,
+   "classes": "charged-polar"
+  },
+  {
+   "res_a": "PHE",
+   "res_b": "ILE",
+   "freq": 0.8932584269662921,
+   "h_product": 19.192467416641165,
+   "classes": "apolar-apolar"
+  },
+  {
+   "res_a": "ALA",
+   "res_b": "PHE",
+   "freq": 0.8764044943820225,
+   "h_product": 9.438396395715356,
+   "classes": "apolar-apolar"
+  },
+  {
+   "res_a": "LYS",
+   "res_b": "GLU",
+   "freq": 0.8539325842696629,
+   "h_product": 8.296969636045098,
+   "classes": "charged-charged"
+  },
+  {
+   "res_a": "ALA",
+   "res_b": "HYP",
+   "freq": 0.848314606741573,
+   "h_product": -2.057126749497071,
+   "classes": "apolar-imino"
+  },
+  {
+   "res_a": "ALA",
+   "res_b": "ILE",
+   "freq": 0.8202247191011236,
+   "h_product": 13.879848520001977,
+   "classes": "apolar-apolar"
+  },
+  {
+   "res_a": "GLY",
+   "res_b": "GLU",
+   "freq": 0.8033707865168539,
+   "h_product": -1.1088642257177426,
+   "classes": "charged-polar"
+  },
+  {
+   "res_a": "ALA",
+   "res_b": "PRO",
+   "freq": 0.7359550561797753,
+   "h_product": -2.057126749497071,
+   "classes": "apolar-imino"
+  },
+  {
+   "res_a": "ARG",
+   "res_b": "ASP",
+   "freq": 0.7359550561797753,
+   "h_product": 9.909398298061586,
+   "classes": "charged-charged"
+  },
+  {
+   "res_a": "GLN",
+   "res_b": "ALA",
+   "freq": 0.7303370786516854,
+   "h_product": -7.0211026531115275,
+   "classes": "apolar-polar"
+  },
+  {
+   "res_a": "ALA",
+   "res_b": "PRO",
+   "freq": 0.7078651685393258,
+   "h_product": -2.057126749497071,
+   "classes": "apolar-imino"
+  },
+  {
+   "res_a": "GLY",
+   "res_b": "ILE",
+   "freq": 0.6348314606741573,
+   "h_product": 2.192086947395764,
+   "classes": "apolar-polar"
+  },
+  {
+   "res_a": "ASP",
+   "res_b": "ASP",
+   "freq": 0.6235955056179775,
+   "h_product": 7.222017194700774,
+   "classes": "charged-charged"
+  },
+  {
+   "res_a": "PHE",
+   "res_b": "PHE",
+   "freq": 0.5730337078651685,
+   "h_product": 13.051015292354545,
+   "classes": "apolar-apolar"
+  }
+ ]
+}

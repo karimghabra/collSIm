@@ -71,25 +71,21 @@ def job_state(job):
 
 
 def overlaps(name):
-    """Overlap coefficient of each pair of neighbouring windows with data."""
-    out = []
-    series = {}
-    for i, c in enumerate(PROTOCOL.centres):
-        files = sorted((workdir(name) / f"w{i:02d}").glob("cv_*.npy"))
+    """Overlap coefficient of each pair of neighbouring umbrella runs with data."""
+    series = []
+    for c, d in pmf.window_dirs(workdir(name), PROTOCOL.centres):
+        files = sorted(d.glob("cv_*.npy"))
         if files:
-            series[i] = np.concatenate([np.load(f)[:, 1] for f in files])
-    for i in sorted(series):
-        if i + 1 in series:
-            out.append((float(PROTOCOL.centres[i]), float(PROTOCOL.centres[i + 1]),
-                        checks.overlap(series[i], series[i + 1])))
-    return out
+            series.append((c, np.concatenate([np.load(f)[:, 1] for f in files])))
+    return [(a, b, checks.overlap(x, y)) for (a, x), (b, y) in zip(series, series[1:])]
 
 
 def rolling_convergence(name):
     """(max |F_first - F_second| over 1.25-2.75 nm, the two minima) from the
     data so far, or None when some window has no data yet."""
     win = pmf.load_windows(workdir(name), PROTOCOL.centres, PROTOCOL.k_umb)
-    if len(win.series) < len(PROTOCOL.centres) or min(len(s) for s in win.series) < 200:
+    expected = len(pmf.window_dirs(workdir(name), PROTOCOL.centres))
+    if len(win.series) < expected or min(len(s) for s in win.series) < 200:
         return None
     edges = np.arange(1.1, 2.91, 0.02)
     res = pmf.analyse(win, edges, n_blocks=2)
@@ -130,9 +126,11 @@ def status(convergence=False, out=sys.stdout):
                         f"check {s.get('worst_check') or '-'}"
                         + (f"  FAILED {s.get('failed')}" if st == "FAILED" else ""))
     out.write("jobs: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())) + "\n")
-    agg = sum(rates)
+    # aggregate: the mean rate of the running jobs times the live workers
+    # (a worker between jobs, or equilibrating, has no rate yet)
+    agg = (sum(rates) / len(rates)) * len(alive) if rates else 0.0
     left = total_ns - done_ns
-    out.write(f"simulated {done_ns:.1f} / {total_ns:.1f} ns; aggregate {agg:.0f} ns/day"
+    out.write(f"simulated {done_ns:.1f} / {total_ns:.1f} ns (windows and contact runs); aggregate ~{agg:.0f} ns/day"
               + (f"; campaign ETA {left / agg:.2f} days\n" if agg else "\n"))
     out.write("\n".join(rows) + ("\n" if rows else ""))
     systems = sorted({j[1] for j in jobs if j[0] == "window"})

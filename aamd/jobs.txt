@@ -1,5 +1,5 @@
 # aamd campaign jobs, taken in order by 'aamd run' workers (see aamd/umbrella.py)
-# kinds: build SYSTEM | pull SYSTEM | window SYSTEM I | contact SYSTEM R0_NM NS
+# kinds: build SYSTEM | pull SYSTEM | window SYSTEM I | contact SYSTEM R0_NM NS (one umbrella run at R0; "contact S 1.300 4.0" is the inner window added to every PMF)
 pull native-05D
 window native-1D 0
 window native-1D 1
@@ -16,6 +16,7 @@ window native-1D 11
 window native-1D 12
 window native-1D 13
 window native-1D 14
+contact native-1D 1.300 4.0
 build succ-1D
 build succ-05D
 build succ-1D-Ca
@@ -36,6 +37,7 @@ window native-05D 11
 window native-05D 12
 window native-05D 13
 window native-05D 14
+contact native-05D 1.300 4.0
 pull succ-1D
 pull succ-05D
 window succ-1D 0
@@ -53,6 +55,7 @@ window succ-1D 11
 window succ-1D 12
 window succ-1D 13
 window succ-1D 14
+contact succ-1D 1.300 4.0
 window succ-05D 0
 window succ-05D 1
 window succ-05D 2
@@ -68,6 +71,7 @@ window succ-05D 11
 window succ-05D 12
 window succ-05D 13
 window succ-05D 14
+contact succ-05D 1.300 4.0
 pull succ-1D-Ca
 pull succ-1D-SO4
 window succ-1D-Ca 0
@@ -85,6 +89,7 @@ window succ-1D-Ca 11
 window succ-1D-Ca 12
 window succ-1D-Ca 13
 window succ-1D-Ca 14
+contact succ-1D-Ca 1.300 4.0
 window succ-1D-SO4 0
 window succ-1D-SO4 1
 window succ-1D-SO4 2
@@ -100,6 +105,7 @@ window succ-1D-SO4 11
 window succ-1D-SO4 12
 window succ-1D-SO4 13
 window succ-1D-SO4 14
+contact succ-1D-SO4 1.300 4.0
 pull native-1D-Ca
 pull native-1D-Mg
 pull succ-1D-Mg
