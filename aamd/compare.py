@@ -50,6 +50,51 @@ def analysed_pmf(name):
     return res
 
 
+R_NOMINAL_NM = 0.75      # modcoll's nominal molecular radius; surface separation = d - 2 R
+
+
+def short_range(res, sysdir, centres):
+    """The part of a PMF at sub-nanometre surface separation, and the waters.
+
+    * wall: the separation inside the minimum where F has risen 2 kT above it;
+    * decay length: exponential fit F - F_min = A exp(-(d - d_min)/lambda) to
+      the inner branch (points from the minimum inward with F - F_min > 0.2 kT),
+      when there are at least three such points;
+    * long-range attraction: the mean of F over surface separations 0.5-1.0 nm
+      (d = 2.0-2.5 nm), i.e. what is left of the attraction beyond the first
+      hydration layers;
+    * bridging waters per window (water O within 0.35 nm of both segments),
+      where recorded.
+    """
+    k = int(np.nanargmin(res.F))
+    d_min, f_min = float(res.x[k]), float(res.F[k])
+    inner = [(float(x), float(f - f_min)) for x, f in zip(res.x[:k + 1][::-1], res.F[:k + 1][::-1])
+             if np.isfinite(f)]
+    wall = next((x for x, df in inner if df >= 2.0), None)
+    pts = [(x, df) for x, df in inner if df > 0.2]
+    decay = None
+    if len(pts) >= 3:
+        x = np.array([p[0] for p in pts])
+        y = np.log(np.array([p[1] for p in pts]))
+        slope, icpt = np.polyfit(x - d_min, y, 1)
+        if slope < 0:
+            decay = {"lambda_nm": float(-1.0 / slope), "A_kT": float(np.exp(icpt)), "n_points": len(pts)}
+    m = (res.x >= 2.0) & (res.x <= 2.5) & np.isfinite(res.F)
+    water = []
+    for i, c in enumerate(centres):
+        files = sorted((sysdir / f"w{i:02d}").glob("hyd_*.npy"))
+        cvf = sorted((sysdir / f"w{i:02d}").glob("cv_*.npy"))
+        if files and cvf:
+            h = np.concatenate([np.load(f) for f in files])
+            cv = np.concatenate([np.load(f) for f in cvf])
+            water.append({"r0": float(c), "d_mean": float(cv[:, 1].mean()), "bridging": float(h[:, 1].mean()),
+                          "bridging_sd": float(h[:, 1].std()), "n": int(len(h))})
+    return {"d_min_nm": d_min, "surface_sep_min_nm": d_min - 2 * R_NOMINAL_NM, "F_min_kT": f_min,
+            "wall_2kT_nm": wall, "inner_decay": decay,
+            "F_mean_surface_0.5_1.0nm_kT": float(np.mean(res.F[m])) if m.any() else None,
+            "bridging_waters": water}
+
+
 def interp(pred, key, d):
     return float(np.interp(d, pred["d_nm"], pred[key]))
 
@@ -141,6 +186,7 @@ def summary_figure(rows):
 def main(argv=None):
     RESULTS.mkdir(exist_ok=True)
     rows = []
+    hydration = {}
     for name in build.SYSTEMS:
         if not (build.WORK / name / "pull.json").exists():
             continue
@@ -150,6 +196,7 @@ def main(argv=None):
         pf = RESULTS / f"predict_{name}.json"
         pred = json.loads(pf.read_text()) if pf.exists() else None
         rows.append(row_for(name, res, pred))
+        hydration[name] = short_range(res, build.WORK / name, PROTOCOL.centres)
         figure(name, res, pred)
     if not rows:
         print("no finished PMF yet")
@@ -196,8 +243,18 @@ def main(argv=None):
         lines += ["", f"eps_h that would match the monovalent systems: {fit['eps_h_fit']:.3f} +- {fit['se']:.3f} "
                       f"kT/KD^2 (n = {fit['n']}; model value 0.05)"]
     (RESULTS / "comparison.md").write_text("\n".join(lines) + "\n")
-    (RESULTS / "comparison.json").write_text(json.dumps({"rows": rows, "derived": derived, "eps_h_fit": fit},
-                                                        indent=1))
+    lines += ["", "| system | minimum at d (surface sep.) | F 2 kT above minimum, inside, at | inner decay length | "
+                  "mean F at surface sep. 0.5-1.0 nm |", "|---|---|---|---|---|"]
+    for n, h in hydration.items():
+        dec = h["inner_decay"]
+        f_lr = h["F_mean_surface_0.5_1.0nm_kT"]
+        lines.append(f"| {n} | {h['d_min_nm']:.2f} nm ({h['surface_sep_min_nm']:.2f} nm) | "
+                     f"{h['wall_2kT_nm'] if h['wall_2kT_nm'] is not None else 'not reached'} | "
+                     f"{('%.3f nm (%d points)' % (dec['lambda_nm'], dec['n_points'])) if dec else '-'} | "
+                     f"{('%+.2f kT' % f_lr) if f_lr is not None else '-'} |")
+    (RESULTS / "comparison.md").write_text("\n".join(lines) + "\n")
+    (RESULTS / "comparison.json").write_text(json.dumps({"rows": rows, "derived": derived, "eps_h_fit": fit,
+                                                         "short_range": hydration}, indent=1))
     summary_figure(rows)
     print("\n".join(lines))
 
