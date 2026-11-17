@@ -110,3 +110,16 @@ def test_record_writes_one_line_per_non_ok(tmp_path):
     lines = w.read_text().splitlines()
     assert len(lines) == 2 and " b WARN " in lines[0] and " c FAIL " in lines[1]
     assert checks.record(cs[:2], "x", w) == "warn"
+
+
+def test_interface_waters_counts_bridging_waters_across_the_box_edge():
+    from aamd.umbrella import interface_waters
+    box = np.array([5.0, 5.0, 5.0])
+    a = np.array([[4.9, 1.0, 1.0]])              # segment A atom near the +x edge
+    b = np.array([[5.4, 1.0, 1.0]])              # segment B, unwrapped (OpenMM keeps the solute whole)
+    waters = np.array([[0.15, 1.0, 1.0],         # between them, stored wrapped through the boundary
+                       [4.6, 1.0, 1.0],          # near A only
+                       [2.5, 2.5, 2.5]])         # bulk
+    pos = np.vstack([a, b, waters])
+    out = interface_waters(pos, box, [np.array([0]), np.array([1])], np.array([2, 3, 4]))
+    assert out == [1, 2, 1]

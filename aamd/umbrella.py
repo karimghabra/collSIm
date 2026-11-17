@@ -21,6 +21,9 @@ A job (window or contact run) writes into its own directory
 
   cv_XXX.npy      per chunk, per ps: time, Delta x, Delta y, Delta z (nm),
                   potential and kinetic energy (kJ/mol), temperature (K), volume (nm^3)
+  hyd_XXX.npy     per chunk, every 10 ps: time, waters bridging the two segments
+                  (O within 0.35 nm of heavy atoms of both), waters within 0.35 nm
+                  of segment A, of segment B
   solute_XXX.dcd  per chunk, solute + ions every 10 ps, not wrapped
   state.xml       restart point, rewritten atomically after each chunk
   progress.json   chunks done
@@ -243,6 +246,9 @@ def _run_job(name, jobdir, r0, prod_ns, start_state, protocol, restraint, label)
     ion_idx = {"Mg": [a.index for a in prmtop.topology.atoms() if a.residue.name == "MG"],
                "Ca": [a.index for a in prmtop.topology.atoms() if a.residue.name == "CA" and a.name == "CA"
                       and a.residue.name == "CA"]}
+    water_o = np.array([a.index for a in prmtop.topology.atoms() if a.residue.name in ("WAT", "HOH")
+                        and a.element is not None and a.element.symbol == "O"])
+    hyd_every = max(1, int(round(protocol.dcd_every_ps / protocol.cv_every_ps)))
     oxy_idx = np.array([a.index for a in prmtop.topology.atoms() if a.element is not None
                         and a.element.symbol == "O"])
 
@@ -282,6 +288,7 @@ def _run_job(name, jobdir, r0, prod_ns, start_state, protocol, restraint, label)
         t_chunk = time.time()
         t_start = c * protocol.chunk_ns * 1000.0
         crashed = None
+        hyd = []
         for k in range(n):
             try:
                 sim.step(per_cv)
@@ -298,6 +305,9 @@ def _run_job(name, jobdir, r0, prod_ns, start_state, protocol, restraint, label)
             rec[k, 5] = ke
             rec[k, 6] = 2.0 * ke / (dof * 0.0083144626)
             rec[k, 7] = st.getPeriodicBoxVolume().value_in_unit(unit.nanometer ** 3)
+            if (k + 1) % hyd_every == 0 and np.all(np.isfinite(pos[water_o])):
+                box = np.diag(st.getPeriodicBoxVectors(asNumpy=True).value_in_unit(unit.nanometer))
+                hyd.append([rec[k, 0], *interface_waters(pos, box, groups.heavy, water_o)])
             if not np.all(np.isfinite(rec[k])):
                 rec = rec[:k + 1]
                 break
@@ -305,6 +315,8 @@ def _run_job(name, jobdir, r0, prod_ns, start_state, protocol, restraint, label)
         del dcd
         wall = time.time() - t_chunk
         np.save(jobdir / f"cv_{c:03d}.npy", rec)
+        if hyd:
+            np.save(jobdir / f"hyd_{c:03d}.npy", np.array(hyd))
         # ---- checks on this chunk
         where = f"{label} chunk {c}"
         if crashed is not None:
@@ -354,6 +366,30 @@ def _status(jobdir, label, r0, ns_done, ns_total, walls, protocol, state, failed
         "job": label, "state": state, "r0": r0, "ns_done": ns_done, "ns_total": ns_total,
         "ns_per_day": ns_day, "eta_h": eta_h, "last_checkpoint": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "updated": time.time(), "pid": os.getpid(), "worst_check": worst, "failed": failed}))
+
+
+def interface_waters(pos, box, heavy, water_o, r=0.35):
+    """(bridging, near A, near B): water oxygens within r of a heavy atom of
+    both segments, of segment A, of segment B (periodic). Bridging waters are
+    the ones a hydration force is about: they are expelled as the surfaces
+    meet."""
+    from scipy.spatial import cKDTree
+
+    # minimum image about the pair's centre (each segment is far shorter than
+    # half the box in every direction), then a bounding-box prefilter
+    c = pos[np.concatenate(heavy)].mean(axis=0)
+    w = pos[water_o] - c
+    w -= box * np.round(w / box)
+    near = []
+    for h in heavy:
+        x = pos[h] - c
+        x -= box * np.round(x / box)
+        inside = np.flatnonzero(np.all((w > x.min(axis=0) - r) & (w < x.max(axis=0) + r), axis=1))
+        d, _ = cKDTree(x).query(w[inside], k=1, distance_upper_bound=r)
+        hit = np.zeros(len(w), bool)
+        hit[inside[np.isfinite(d)]] = True
+        near.append(hit)
+    return [int(np.count_nonzero(near[0] & near[1])), int(near[0].sum()), int(near[1].sum())]
 
 
 def window(name, i, protocol=PROTOCOL):

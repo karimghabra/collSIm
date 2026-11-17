@@ -1,0 +1,18 @@
+{
+ "healthy": {
+  "outcome": "completed",
+  "non_ok_checks": []
+ },
+ "bad_timestep": {
+  "outcome": "stopped: selftest/bad_timestep: equilibration stopped: Particle coordinate is NaN.  For more information, see https://github.com/openmm/openmm/wiki/Frequently-Asked-Questions#nan",
+  "non_ok_checks": [
+   "finite:fail"
+  ]
+ },
+ "no_restraint": {
+  "outcome": "stopped: selftest/no_restraint chunk 0: hard check failure ['umbrella_centre']",
+  "non_ok_checks": [
+   "umbrella_centre:fail"
+  ]
+ }
+}

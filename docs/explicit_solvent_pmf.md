@@ -109,7 +109,25 @@ by refitting the AmberTools ALY with it (results below).
 equivalent, GAFF2 Lennard-Jones and bonded terms (parmchk2). In these systems
 sulfate meets only Na+ and the protein (never Mg2+ or Ca2+).
 
-<!-- PARAMS -->
+**What came out** (`aamd/params/*_resp.json`):
+
+| residue | net charge | RESP rrms | key charges (e) | ff14SB analogue |
+|---|---|---|---|---|
+| SLL | -1 | 0.023 | carboxylate C 0.843, O -0.835 x 2; amide N -0.653, H 0.320, C 0.703, O -0.592 | GLU CD 0.805, OE -0.819 |
+| SLH | 0 | 0.100 | acid C 0.784, O= -0.625, O(H) -0.682, H 0.467 | GLH CD 0.680, OE1 -0.584, OE2 -0.651, HE2 0.464 |
+| SO4 | -2 | 0.004 | S +1.365, O -0.841 x 4 (S-O 0.149 nm) | |
+
+(The relative rms of a neutral residue is larger because its potential is
+small.) **Check of the procedure**: the AmberTools ALY refitted with it differs
+from the shipped charges by 0.066 e rms, 0.17 e at most. The large differences
+are on the buried side-chain carbons (CB -0.07 against -0.23, CG 0.04 against
+0.16, CE -0.04 against -0.21), the atoms RESP determines worst; the exposed
+groups agree to 0.1 e (amide C 0.746 against 0.857, O -0.592 against -0.609, N
+-0.616 against -0.703, H 0.334 against 0.379; acetyl methyl C -0.383 against
+-0.478), and the charges summed over chemical groups to 0.07 e. Part of the
+difference is the geometry step (ff14SB minima here); Belfon & Simmerling's
+exact QM protocol was not available to repeat. This is the size of the
+uncertainty to keep in mind for the succinyl charges.
 
 Versions: OpenMM 8.6.1 (CUDA, mixed precision), AmberTools 26.0, parmed
 4.3.1, psi4 1.11, pymbar 4.2.0, mdtraj 1.11.1, numpy 2.4.6 (all conda-forge;
@@ -117,9 +135,13 @@ exact builds with checksums in `aamd/environment.lock.txt`).
 
 ### Systems
 
-Each pair sits in a rectangular box of TIP3P water about 8.0 x 5.1 x 12.6 nm
-(about 40,700 atoms): 1.25 nm of water beyond the solute in x and y at the
-largest separation, 1.2 nm beyond the ends in z. NaCl 150 mM (counted per
+Each pair sits in a rectangular box of TIP3P water, 7.97 x 5.06 x 12.57 nm
+(about 40,700 atoms): for the native pairs tleap's box with 1.25 nm of water
+beyond the solute in x and y at the largest separation and 1.2 nm beyond the
+ends in z; the succinylated systems are given the same box (their side chains
+are built fully extended, and tleap would otherwise make the box 37 % larger
+around them), so that every system has the same volume and the same numbers
+of ions. The native 0.5 D box came out 1 % smaller in each direction. NaCl 150 mM (counted per
 litre of water) plus neutralising counterions in every box; the divalent
 salts on top of that at 50 mM (CaCl2, MgCl2, Na2SO4: 12 ions in these boxes).
 
@@ -206,7 +228,54 @@ the data so far. `aamd/aamd run` starts (or restarts) three workers; each takes
 the next job that is ready and not locked by a live worker, so after a crash
 or a reboot `aamd/aamd run` resumes every job from its last chunk.
 
-<!-- CHECKS -->
+Checks run on every 0.5 ns chunk (`aamd/checks.py`, where the thresholds are
+defined):
+
+| check | measured per chunk | warn | fail |
+|---|---|---|---|
+| finite | NaN or inf in energies, coordinate, final positions; an integrator stop | - | any |
+| temperature | mean kinetic temperature minus 298.15 K | > 2 K | > 5 K |
+| temperature_peak | largest instantaneous kinetic temperature | - | > 400 K |
+| energy_drift | change of mean potential energy since the previous chunk | > 0.3 % | > 2 % |
+| volume_drift | change of mean box volume since the previous chunk | > 1 % | > 3 % |
+| bond_stretch | longest bond between solute heavy atoms in any frame | > 0.20 nm | > 0.25 nm |
+| helix_rmsd_local | backbone RMSD to the built helix of each two-triplet block (all three chains, superposed on its own), the largest, chunk mean | > 0.20 nm | > 0.30 nm |
+| helix_rmsd_global | the same over the whole segment | > 0.50 nm | - |
+| interchain_hbonds | backbone N-H...O=C bonds between chains of one segment (N...O < 0.35 nm, angle > 120 deg), fraction of the built helix's count, smaller segment | < 60 % | < 40 % |
+| umbrella_centre | mean separation minus the window centre | > 0.15 nm | > 0.30 nm |
+| lateral_offset | mean |Delta y| and mean |Delta z - z0| of the centroids | > 0.05 nm | > 0.15 nm |
+| ion_count | ions of each kind in the topology vs. the build record | - | any difference |
+| ion_coordination | mean number of O within 0.26 nm of Mg2+ / 0.30 nm of Ca2+, final frame | Mg outside 5.5-6.5, Ca outside 6-8.5 | Mg outside 4-8, Ca outside 4-10 |
+| (status) overlap | sum of min(p, q) of neighbouring windows' histograms, 0.01 nm bins | < 0.03 | - |
+| (status) convergence | largest difference between first-half and second-half PMF, 1.25-2.75 nm | > 1 kT | - |
+
+Two thresholds were set from the first healthy run rather than in advance.
+The temperature estimator reads about +1 K at 4 fs (the kinetic energy of the
+Langevin middle integrator at the half step), so the warning starts at 2 K.
+The first integrity measure was the RMSD of the whole segment; on a healthy run
+it reached 0.30-0.33 nm with every inter-chain hydrogen bond present and no
+two-triplet block above 0.13 nm: the 9 nm segment bends and its twist relaxes
+away from the (Pro-Pro-Gly)10 template. Fraying is what the check is for, so
+the graded measure is the local one and the global RMSD only warns at 0.5 nm.
+
+**The checks fire** (`python -m aamd.selftest native-1D 6`, three short runs
+of the 2.0 nm window; output in `aamd/results/selftest.json`):
+
+| run | what was broken | outcome | checks not ok |
+|---|---|---|---|
+| healthy | nothing (0.02 ns equilibration + 2 x 0.05 ns) | completed | none |
+| bad_timestep | 12 fs instead of 4 fs | stopped in equilibration | finite: fail ("Particle coordinate is NaN") |
+| no_restraint | umbrella, lateral and alignment restraints k = 0, window centre moved 1 nm from the start state | stopped after the first chunk | umbrella_centre: fail (-0.37 nm) |
+
+A failing check writes one line to WARNINGS, for example
+
+```
+2026-11-17T03:22:31 selftest/no_restraint chunk 0 umbrella_centre FAIL value=-0.3723 warn[|d|>0.15 nm] fail[|d|>0.30 nm] r0=3.000
+```
+
+and a hard failure marks the job failed and frees its worker for the next job.
+If failures stop the campaign as a whole (every remaining job of a PMF failed,
+or the workers die), that is reported as blocked rather than worked around.
 
 ## Reproduce
 
