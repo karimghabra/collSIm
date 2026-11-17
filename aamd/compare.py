@@ -143,7 +143,7 @@ def figure(name, res, pred):
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     m = np.isfinite(res.F)
     ax.fill_between(res.x[m], (res.F - 2 * res.dF_block)[m], (res.F + 2 * res.dF_block)[m],
-                    color="#2a6fdb", alpha=0.18, lw=0, label="MBAR, 2 block s.e.")
+                    color="#2a6fdb", alpha=0.18, lw=0, label="± 2 block standard errors")
     ax.plot(res.x[m], res.F[m], color="#2a6fdb", lw=2, label="explicit solvent PMF")
     ax.plot(res.x, res.F_first, color="#2a6fdb", lw=0.8, ls="--", label="first half")
     ax.plot(res.x, res.F_second, color="#2a6fdb", lw=0.8, ls=":", label="second half")
@@ -153,7 +153,7 @@ def figure(name, res, pred):
         ax.plot(pred["d_nm"], pred["F_free_el"], color="#d9480f", lw=0.8, ls=":", label="coarse, electrostatic part")
     ax.axhline(0, color="0.6", lw=0.6)
     ax.axvline(1.65, color="0.75", lw=0.6, ls="--")
-    ax.set_xlim(1.3, 2.9)
+    ax.set_xlim(1.2, 2.9)
     ax.set_xlabel("inter-axial separation (nm)")
     ax.set_ylabel("free energy (kT)")
     ax.set_title(name)

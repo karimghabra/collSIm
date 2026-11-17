@@ -1,0 +1,2 @@
+E_mean_el_kT,F_coarse_at_1.65_kT,F_coarse_el_kT,F_coarse_hy_kT,F_coarse_kT,F_coarse_min_kT,H_overlap,dG_contact_kT,dG_wham_kT,d_contact_nm,err_block_kT,halves_diff_kT,net_charge_A_B,residual_kT,system
+-0.8895532719793747,-2.5633847582672633,-0.9976174209234319,-4.702603593892092,-5.696940444324302,-6.913352084754699,65.58814057482171,-7.509964114803017,-7.389813373746482,1.31,0.6147412045533724,0.46107247555870234,"[-5.0, 5.0]",-1.8130236704787146,native-1D

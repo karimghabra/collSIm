@@ -64,6 +64,14 @@ window succ-1D 12
 window succ-1D 13
 window succ-1D 14
 contact succ-1D 1.300 4.0
+# contact region extended to 12 ns (native-1D needed 16 ns; see docs)
+contact succ-1D 1.300 12.0
+window succ-1D 0 12
+window succ-1D 1 12
+window succ-1D 2 12
+window succ-1D 3 12
+window succ-1D 4 12
+window succ-1D 5 12
 window succ-05D 0
 window succ-05D 1
 window succ-05D 2
@@ -98,6 +106,14 @@ window succ-1D-Ca 12
 window succ-1D-Ca 13
 window succ-1D-Ca 14
 contact succ-1D-Ca 1.300 4.0
+# contact region extended to 12 ns (native-1D needed 16 ns; see docs)
+contact succ-1D-Ca 1.300 12.0
+window succ-1D-Ca 0 12
+window succ-1D-Ca 1 12
+window succ-1D-Ca 2 12
+window succ-1D-Ca 3 12
+window succ-1D-Ca 4 12
+window succ-1D-Ca 5 12
 window succ-1D-SO4 0
 window succ-1D-SO4 1
 window succ-1D-SO4 2
@@ -114,7 +130,18 @@ window succ-1D-SO4 12
 window succ-1D-SO4 13
 window succ-1D-SO4 14
 contact succ-1D-SO4 1.300 4.0
+# contact region extended to 12 ns (native-1D needed 16 ns; see docs)
+contact succ-1D-SO4 1.300 12.0
+window succ-1D-SO4 0 12
+window succ-1D-SO4 1 12
+window succ-1D-SO4 2 12
+window succ-1D-SO4 3 12
+window succ-1D-SO4 4 12
+window succ-1D-SO4 5 12
 pull native-1D-Ca
 pull native-1D-Mg
 pull succ-1D-Mg
-# contact runs (20 ns at the minimum of the matching monovalent PMF) are appended once those minima are known
+# contact runs: 20 ns at the minimum of the matching monovalent PMF (native-1D: 1.31 nm)
+contact native-1D-Ca 1.300 20.0
+contact native-1D-Mg 1.300 20.0
+# succ-1D-Mg: appended once the succ-1D minimum is known
