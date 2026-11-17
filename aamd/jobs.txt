@@ -1,0 +1,106 @@
+# aamd campaign jobs, taken in order by 'aamd run' workers (see aamd/umbrella.py)
+# kinds: build SYSTEM | pull SYSTEM | window SYSTEM I | contact SYSTEM R0_NM NS
+pull native-05D
+window native-1D 0
+window native-1D 1
+window native-1D 2
+window native-1D 3
+window native-1D 4
+window native-1D 5
+window native-1D 6
+window native-1D 7
+window native-1D 8
+window native-1D 9
+window native-1D 10
+window native-1D 11
+window native-1D 12
+window native-1D 13
+window native-1D 14
+build succ-1D
+build succ-05D
+build succ-1D-Ca
+build succ-1D-SO4
+build succ-1D-Mg
+window native-05D 0
+window native-05D 1
+window native-05D 2
+window native-05D 3
+window native-05D 4
+window native-05D 5
+window native-05D 6
+window native-05D 7
+window native-05D 8
+window native-05D 9
+window native-05D 10
+window native-05D 11
+window native-05D 12
+window native-05D 13
+window native-05D 14
+pull succ-1D
+pull succ-05D
+window succ-1D 0
+window succ-1D 1
+window succ-1D 2
+window succ-1D 3
+window succ-1D 4
+window succ-1D 5
+window succ-1D 6
+window succ-1D 7
+window succ-1D 8
+window succ-1D 9
+window succ-1D 10
+window succ-1D 11
+window succ-1D 12
+window succ-1D 13
+window succ-1D 14
+window succ-05D 0
+window succ-05D 1
+window succ-05D 2
+window succ-05D 3
+window succ-05D 4
+window succ-05D 5
+window succ-05D 6
+window succ-05D 7
+window succ-05D 8
+window succ-05D 9
+window succ-05D 10
+window succ-05D 11
+window succ-05D 12
+window succ-05D 13
+window succ-05D 14
+pull succ-1D-Ca
+pull succ-1D-SO4
+window succ-1D-Ca 0
+window succ-1D-Ca 1
+window succ-1D-Ca 2
+window succ-1D-Ca 3
+window succ-1D-Ca 4
+window succ-1D-Ca 5
+window succ-1D-Ca 6
+window succ-1D-Ca 7
+window succ-1D-Ca 8
+window succ-1D-Ca 9
+window succ-1D-Ca 10
+window succ-1D-Ca 11
+window succ-1D-Ca 12
+window succ-1D-Ca 13
+window succ-1D-Ca 14
+window succ-1D-SO4 0
+window succ-1D-SO4 1
+window succ-1D-SO4 2
+window succ-1D-SO4 3
+window succ-1D-SO4 4
+window succ-1D-SO4 5
+window succ-1D-SO4 6
+window succ-1D-SO4 7
+window succ-1D-SO4 8
+window succ-1D-SO4 9
+window succ-1D-SO4 10
+window succ-1D-SO4 11
+window succ-1D-SO4 12
+window succ-1D-SO4 13
+window succ-1D-SO4 14
+pull native-1D-Ca
+pull native-1D-Mg
+pull succ-1D-Mg
+# contact runs (20 ns at the minimum of the matching monovalent PMF) are appended once those minima are known

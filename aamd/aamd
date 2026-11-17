@@ -1,0 +1,6 @@
+#!/bin/sh
+# Campaign control with the campaign's own environment: aamd status | run [N] | stop
+here=$(cd "$(dirname "$0")/.." && pwd)
+py="$here/.aamd-env/mamba/envs/md/bin/python"
+[ -x "$py" ] || py=python
+cd "$here" && PATH="$(dirname "$py"):$PATH" exec "$py" -m aamd "$@"

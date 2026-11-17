@@ -10,3 +10,13 @@ imgui.ini
 .venv/
 .pytest_cache/
 results/modcoll/**/raw/
+.aamd-env/
+aamd/work/
+aamd/params/resp_*/
+aamd/params/*_check.*
+aamd/params/leap.in
+aamd/params/leap.log
+aamd/params/derive*.log
+psi.*.clean
+timer.dat
+aamd/results/raw/
