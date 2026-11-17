@@ -1,6 +1,8 @@
 """Which residues touch at contact, against what the coarse hydrophobic term weights.
 
-``python -m aamd.contacts SYSTEM WINDOW [WINDOW ...]``  ->  aamd/results/contacts_SYSTEM.json
+``python -m aamd.contacts SYSTEM RUN [RUN ...]``  ->  aamd/results/contacts_SYSTEM.json
+
+RUN is a window index (``0`` = w00) or an extra run's directory (``c1.300``).
 
 For the frames of the given windows: every residue pair (one residue of each
 segment) with any two heavy atoms within 0.45 nm is "in contact" in that
@@ -50,7 +52,7 @@ def analyse(name, windows, cutoff=0.45, stride=2):
     atom_cls = {"C-C": 0, "C-polar": 0, "polar-polar": 0}
     n_frames = 0
     for w in windows:
-        jd = sysdir / f"w{w:02d}"
+        jd = sysdir / (w if str(w).startswith("c") else f"w{int(w):02d}")
         dcds = sorted(glob.glob(str(jd / "solute_*.dcd")))
         if not dcds:
             continue
@@ -115,7 +117,7 @@ def analyse(name, windows, cutoff=0.45, stride=2):
 
 def main(argv=None):
     a = sys.argv[1:] if argv is None else argv
-    o = analyse(a[0], [int(x) for x in a[1:]])
+    o = analyse(a[0], a[1:])
     print(json.dumps({k: v for k, v in o.items() if k != "top_pairs"}, indent=1))
 
 
