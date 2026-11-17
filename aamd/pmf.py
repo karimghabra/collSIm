@@ -9,9 +9,7 @@ Estimators
   a histogram). Used as the reported estimator; WHAM is the cross-check.
 
 Both take, per window k, a time series x_k(t) of the coordinate and a bias
-u_k(x) = 0.5 k_k (x - r0_k)^2 in kT. Samples are subsampled to their
-statistical inefficiency (pymbar.timeseries) before either estimator sees
-them.
+u_k(x) = 0.5 k_k (x - r0_k)^2 in kT.
 
 Errors
 ------
@@ -20,6 +18,11 @@ Errors
   standard deviation of the B profiles divided by sqrt(B);
 * convergence: the PMF of the first and of the second half of production,
   separately.
+
+Before all of this each window's leading non-stationary part is dropped
+(``detect_equilibration``: the start that maximises the number of
+independent samples, at most half the window); the blocks and halves are of
+what remains.
 
 A profile is given relative to its mean over a reference interval at large
 separation (``ref``), the zero of interaction.
@@ -78,6 +81,22 @@ def statistical_inefficiency(x) -> float:
             break
         g += 2.0 * c * (1.0 - t / n)
     return max(1.0, g)
+
+
+def detect_equilibration(x, step=None, max_frac=0.5):
+    """Start t0 of the stationary part of ``x``: the t0 (on a grid of
+    ``step`` samples, at most ``max_frac`` of the series) that maximises the
+    number of independent samples (N - t0) / g(x[t0:]) (Chodera, JCTC 12,
+    1799 (2016))."""
+    x = np.asarray(x, float)
+    n = len(x)
+    step = step or max(1, n // 40)
+    best, best_t0 = -1.0, 0
+    for t0 in range(0, int(max_frac * n) + 1, step):
+        neff = (n - t0) / statistical_inefficiency(x[t0:])
+        if neff > best:
+            best, best_t0 = neff, t0
+    return best_t0
 
 
 def subsample(x, g=None):
@@ -157,6 +176,7 @@ class PMFResult:
     g: list                  # statistical inefficiency per window
     n_eff: list
     ref: tuple
+    n_discarded: list = dataclasses.field(default_factory=list)   # leading samples dropped per window
 
     def minimum(self):
         k = int(np.nanargmin(self.F))
@@ -167,34 +187,41 @@ class PMFResult:
         return d
 
 
-def analyse(win: Windows, edges, ref=(2.55, 2.80), n_blocks=4, estimator=mbar_pmf) -> PMFResult:
-    """Full analysis: subsample, MBAR profile, WHAM check, block error, halves."""
-    sub, gs = [], []
-    for s in win.series:
-        y, g = subsample(s)
-        sub.append(y)
-        gs.append(g)
-    ws = Windows(win.centres, win.k_kt, sub)
+def analyse(win: Windows, edges, ref=(2.55, 2.80), n_blocks=4, estimator=mbar_pmf,
+            equilibrate=True, stride=5) -> PMFResult:
+    """Full analysis: drop each window's non-stationary start, then the MBAR
+    profile, WHAM check, block error and halves.
+
+    The estimators see every ``stride``-th sample, not only the uncorrelated
+    ones: correlated samples leave the estimate unbiased and fill the
+    histogram bins; the uncertainty comes from the blocks and halves, whose
+    spread already reflects the correlation. ``n_eff`` (samples / g) is
+    reported for each window."""
+    t0s = [detect_equilibration(s) if equilibrate else 0 for s in win.series]
+    win = Windows(win.centres, win.k_kt, [np.asarray(s)[t:] for s, t in zip(win.series, t0s)])
+    gs = [statistical_inefficiency(s) for s in win.series]
+
+    def thin(w):
+        return Windows(w.centres, w.k_kt, [np.asarray(s)[::stride] for s in w.series])
+
+    ws = thin(win)
     xc, F, _ = estimator(ws, edges)
     F = reference_shift(xc, F, ref)
     _, Fw, _ = wham(ws, edges)
     Fw = reference_shift(xc, Fw, ref)
     blocks = []
     for b in range(n_blocks):
-        wb = win.subset(b / n_blocks, (b + 1) / n_blocks)
-        wb = Windows(wb.centres, wb.k_kt, [subsample(s, g)[0] for s, g in zip(wb.series, gs)])
-        _, Fb, _ = estimator(wb, edges)
+        _, Fb, _ = estimator(thin(win.subset(b / n_blocks, (b + 1) / n_blocks)), edges)
         blocks.append(reference_shift(xc, Fb, ref))
     blocks = np.array(blocks)
-    dF = np.nanstd(blocks, axis=0, ddof=1) / np.sqrt(n_blocks)
+    with np.errstate(invalid="ignore"):
+        dF = np.nanstd(blocks, axis=0, ddof=1) / np.sqrt(n_blocks)
     halves = []
     for lo, hi in ((0.0, 0.5), (0.5, 1.0)):
-        wh = win.subset(lo, hi)
-        wh = Windows(wh.centres, wh.k_kt, [subsample(s, g)[0] for s, g in zip(wh.series, gs)])
-        _, Fh, _ = estimator(wh, edges)
+        _, Fh, _ = estimator(thin(win.subset(lo, hi)), edges)
         halves.append(reference_shift(xc, Fh, ref))
     return PMFResult(xc, F, dF, halves[0], halves[1], Fw, [float(g) for g in gs],
-                     [int(len(s)) for s in sub], tuple(ref))
+                     [int(len(s) / g) for s, g in zip(win.series, gs)], tuple(ref), [int(t) for t in t0s])
 
 
 # ------------------------------------------------------------- reading runs ---

@@ -70,3 +70,16 @@ def test_mbar_leaves_empty_bins_nan():
     x, F, dF = pmf.mbar_pmf(win, edges)
     assert np.all(np.isnan(F[x < 1.0]))
     assert np.isfinite(F[(x > 1.3) & (x < 2.7)]).all()
+
+
+def test_detect_equilibration_drops_a_drifting_start():
+    rng = np.random.default_rng(11)
+    n, phi = 8000, 0.9
+    x = np.zeros(n)
+    e = rng.normal(scale=0.01, size=n)
+    for t in range(1, n):
+        x[t] = phi * x[t - 1] + e[t]
+    x[:1000] += np.linspace(0.3, 0.0, 1000)       # relaxes during the first eighth
+    t0 = pmf.detect_equilibration(x)
+    assert 600 <= t0 <= 1600
+    assert pmf.detect_equilibration(x[2000:]) <= 400   # stationary: (almost) nothing dropped

@@ -181,28 +181,47 @@ nothing restrains the middle six triplets.
 Umbrella windows at d = 1.4, 1.5, ..., 2.8 nm (15 windows), k = 1000
 kJ/mol/nm^2 (thermal width 0.05 nm), started from one pull (0.5 ns at
 3.0 nm, then 2 ns from 3.0 to 1.15 nm). In the native 1 D pull the separation
-stopped following the restraint at about 1.45 nm (the steric contact), so no
-window was placed below 1.4 nm. Per window 0.5 ns equilibration, discarded,
-and 4 ns production. NPT (Monte Carlo barostat, 1 bar), 298.15 K, Langevin
-middle integrator at 1/ps, 4 fs steps with hydrogen masses repartitioned to
-3 amu, PME with 0.9 nm cutoff.
+stopped following the restraint at about 1.45 nm (the steric contact), so the
+regular windows start at 1.4 nm. The 1.4 nm window then sat at its own centre
+(mean 1.398 nm), i.e. the free-energy minimum was at or below the edge of the
+sampled range, so every PMF gets one more window at 1.3 nm (`contact S 1.300`
+in `aamd/jobs.txt`, started from the 1.4 nm state, same spring). Per window
+0.5 ns equilibration, discarded, and 4 ns production. NPT (Monte Carlo
+barostat, 1 bar), 298.15 K, Langevin middle integrator at 1/ps, 4 fs steps
+with hydrogen masses repartitioned to 3 amu, PME with 0.9 nm cutoff.
+
+**Contact-region extension.** At 4 ns the native 1 D windows from 1.3 to
+1.9 nm had statistical inefficiencies of 160-590 ps (against 40-130 ps at
+2.1-2.8 nm), and the PMFs from the first and second halves of production
+differed by up to 4.7 kT at contact, with the windows at 1.4 and 1.5 nm
+still drifting inwards. The slow variables are those the umbrella does not
+act on: rotation of each helix about its own axis (left free, so that the
+pair can find its best register of side chains) and the rearrangement of
+interfacial side chains and water. Those seven runs are extended to 16 ns
+(job lines `window S I 16`, which continue a finished window from its last
+chunk).
 
 **Budget.** One window on the RTX 3080 runs at 245 ns/day; three windows side
-by side reach about 400 ns/day in total. A PMF costs 15 x 4.5 ns = 67.5 ns
-plus a 2.5 ns pull, about 4 GPU-hours. The full matrix asked for (native and
+by side reach about 400 ns/day in total (330-520 ns/day in production,
+depending on what else shares the machine). A PMF costs 16 x 4.5 ns = 72 ns
+plus a 2.5 ns pull, about 4.5 GPU-hours. The full matrix (native and
 succinylated, both staggers, each without and with Ca2+ and Mg2+, sulfate with
 the succinylated pair) is 14 PMFs, about 2.7 GPU-days. Run instead, about 1.4
 GPU-days: the four monovalent PMFs, ion PMFs for the succinylated 1 D pair
 with Ca2+ and with sulfate, and 20 ns at contact for the remaining ion
-conditions (bridge counts only).
+conditions (bridge counts only). <!-- BUDGET -->
 
 ### Analysis
 
-`aamd.pmf`: each window's series subsampled to its statistical inefficiency;
-MBAR (pymbar) with a histogram free-energy surface on 0.02 nm bins, WHAM as an
-independent check; zero = mean over 2.55-2.80 nm; error = block standard error
-over four consecutive blocks of every window; convergence = the PMF from the
-first and from the second half of production, separately. Tested on synthetic
+`aamd.pmf`: each window's leading non-stationary part dropped (the start,
+at most half the window, that maximises the number of independent samples;
+Chodera, JCTC 12, 1799 (2016)); MBAR (pymbar) on every fifth 1 ps sample with
+a histogram free-energy surface on 0.02 nm bins, WHAM as an independent check;
+zero = mean over 2.55-2.80 nm; error = block standard error over four
+consecutive blocks of every window; convergence = the PMF from the first and
+from the second half of production, separately. The number of independent
+samples per window (length / statistical inefficiency) is reported with
+each PMF. Tested on synthetic
 umbrella data drawn from a known profile (`tests/aamd/test_pmf.py`).
 
 Bridges (`aamd.bridges`) use the contact and bridge definitions of
