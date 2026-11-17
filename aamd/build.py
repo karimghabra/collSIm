@@ -218,6 +218,8 @@ def leap_header(spec: SystemSpec) -> str:
     lines = ["source leaprc.protein.ff14SB", "source leaprc.protein.ff14SB_modAA",
              "source leaprc.water.tip3p",
              "loadamberparams frcmod.ions234lm_1264_tip3p"]
+    if spec.divalent == "SO4":
+        lines.append("source leaprc.gaff2")       # sulfate types s6 / o
     for lib in ("SLL", "SLH", "SO4"):
         if (PARAMS / f"{lib}.lib").exists():
             lines += [f"loadoff {PARAMS / (lib + '.lib')}"]

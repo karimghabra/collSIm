@@ -59,6 +59,10 @@ ALPHA_WATER = 1.444
 C4_WATER_TIP3P = {"Mg": 132.9, "Ca": 87.3}          # kcal/mol/A^4, parmed DEFAULT_C4_PARAMS
 JAFARI_O2_POL = {"Mg": 0.125, "Ca": 0.600}          # A^3, acetate-fitted (Jafari et al. 2024)
 DIVALENT_RESNAMES = {"MG": "Mg", "CA": "Ca"}
+# atom types missing from lj_1264_pol.dat, mapped to the type whose
+# Lennard-Jones parameters (and chemistry) they share: 8C, the sp3 side-chain
+# carbon of ff14SB_modAA's ALY (and of SLL/SLH here), is CT in all but name
+POL_ALIAS = {"8C": "CT"}
 TEMPERATURE = 298.15
 
 
@@ -87,11 +91,13 @@ def c4_matrix_terms(atom_types, resnames, pol=None, o2_override=True):
     if len(cations) > 1:
         raise ValueError("one divalent cation species per system (O2 polarizability is per species)")
     cation = next(iter(cations), None)
+    if cation is None:
+        return c4w, alpha
     for i, (t, r) in enumerate(zip(atom_types, resnames)):
         if r in DIVALENT_RESNAMES:
             c4w[i] = C4_WATER_TIP3P[DIVALENT_RESNAMES[r]]
             continue
-        a = pol.get(t)
+        a = pol.get(POL_ALIAS.get(t, t))
         if a is None:
             raise KeyError(f"no 12-6-4 polarizability for atom type {t}")
         if t == "O2" and cation is not None and o2_override:
@@ -137,7 +143,30 @@ def make_system(prmtop, cutoff_nm=0.9, hmr_amu=3.0, o2_override=True):
                                  constraints=app.HBonds, rigidWater=True,
                                  hydrogenMass=hmr_amu * unit.amu, ewaldErrorTolerance=5e-4)
     add_c4_term(system, prmtop, cutoff_nm, o2_override=o2_override)
+    constrain_sulfate(system, prmtop)
     return system
+
+
+def constrain_sulfate(system, prmtop):
+    """Constrain the four S-O bonds of every sulfate at their GAFF2 lengths:
+    the bonds are flexible in GAFF2 and too fast for a 4 fs step (hydrogen
+    mass repartitioning does not reach them). The O-S-O angles stay flexible."""
+    bonds = next((f for f in system.getForces() if isinstance(f, openmm.HarmonicBondForce)), None)
+    length = {}
+    if bonds is not None:
+        for k in range(bonds.getNumBonds()):
+            i, j, r0, _ = bonds.getBondParameters(k)
+            length[(min(i, j), max(i, j))] = r0
+    n = 0
+    for res in prmtop.topology.residues():
+        if res.name != "SO4":
+            continue
+        at = {a.name: a.index for a in res.atoms()}
+        for o in ("O1", "O2", "O3", "O4"):
+            key = (min(at["S"], at[o]), max(at["S"], at[o]))
+            system.addConstraint(at["S"], at[o], length.get(key, 0.149 * unit.nanometer))
+            n += 1
+    return n
 
 
 # ----------------------------------------------------------------- groups ---

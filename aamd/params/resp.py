@@ -165,6 +165,8 @@ def two_stage(conformers, total_charge, elements, bonds, fixed=None, symmetric=(
         refit.add(i)
         refit.update(hs)
         groups2 += [[i], hs]
+    if not refit:                             # no methyl/methylene groups: stage 1 is final
+        return q1, {"rrms_stage1": rrms1, "rrms_stage2": rrms1, "q_stage1": q1}
     fixed2 = {i: (fixed[i] if i in fixed else q1[i]) for i in range(n) if i not in refit}
     groups2 += [[i] for i in range(n) if i not in refit]
     restr2 = np.array([i in refit and elements[i] == "C" for i in range(n)])

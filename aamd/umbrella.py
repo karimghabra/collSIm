@@ -467,10 +467,14 @@ def run_one(job):
 
 def worker(k, n, jobfile):
     """Take the first job of JOBFILE that is unfinished, ready and not locked
-    by a live worker; run it; re-read the file; repeat. Exits when every job
-    is finished. A failed job is logged (WARNINGS) and not retried. Several
+    by a live process; run it in a fresh Python process (so that code fixes
+    apply from the next job on, and one job's CUDA context or memory cannot
+    leak into the next); re-read the file; repeat. Exits when every job is
+    finished. A failed job is logged (WARNINGS) and not retried. Several
     workers share the list through the lock files; ``k`` and ``n`` only name
     the worker."""
+    import subprocess
+
     while True:
         jobs = read_jobs(jobfile)
         pending = [j for j in jobs if not job_finished(j)]
@@ -479,29 +483,49 @@ def worker(k, n, jobfile):
             return
         ran = False
         for job in pending:
-            if not job_ready(job):
+            if not job_ready(job) or _locked_by_live(job):
                 continue
-            try:
-                if run_one(job):
-                    ran = True
-                    print(f"[worker {k}] done {' '.join(job)}", flush=True)
-                    break
-            except JobFailed as ex:
-                ran = True
-                if job[0] == "pull":
-                    (job_dir(job) / "failed_pull.json").write_text(json.dumps({"error": str(ex)}))
-                print(f"[worker {k}] FAILED {' '.join(job)}: {ex}", flush=True)
-                break
-            except Exception as ex:
-                ran = True
-                with open(WARNINGS, "a") as fh:
-                    fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {' '.join(job)} job_error FAIL {ex!r}\n")
-                fname = f"failed_{job[0]}.json" if job[0] in ("build", "pull") else "failed.json"
-                (job_dir(job) / fname).write_text(json.dumps({"error": repr(ex)}))
-                print(f"[worker {k}] ERROR {' '.join(job)}: {ex!r}", flush=True)
-                break
+            t0 = time.time()
+            p = subprocess.run([sys.executable, "-m", "aamd.umbrella", "job", *job])
+            if time.time() - t0 < 5 and p.returncode == 0 and not job_finished(job):
+                continue                     # someone else took it first
+            ran = True
+            word = {0: "done", 2: "FAILED"}.get(p.returncode, f"ERROR (exit {p.returncode})")
+            print(f"[worker {k}] {word} {' '.join(job)}", flush=True)
+            break
         if not ran:
             time.sleep(60)
+
+
+def _locked_by_live(job) -> bool:
+    lock = job_dir(job) / "lock"
+    if not lock.exists():
+        return False
+    try:
+        os.kill(int(lock.read_text().strip() or 0), 0)
+        return True
+    except (ProcessLookupError, ValueError):
+        return False
+    except PermissionError:
+        return True
+
+
+def job_main(job) -> int:
+    """Run one job in this process; exit code 0 done, 2 failed check, 1 error."""
+    try:
+        run_one(job)
+        return 0
+    except JobFailed as ex:
+        if job[0] == "pull":
+            (job_dir(job) / "failed_pull.json").write_text(json.dumps({"error": str(ex)}))
+        print(f"FAILED {' '.join(job)}: {ex}", flush=True)
+        return 2
+    except Exception as ex:
+        with open(WARNINGS, "a") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {' '.join(job)} job_error FAIL {ex!r}\n")
+        fname = f"failed_{job[0]}.json" if job[0] in ("build", "pull") else "failed.json"
+        (job_dir(job) / fname).write_text(json.dumps({"error": repr(ex)}))
+        raise
 
 
 def main(argv=None):
@@ -514,6 +538,8 @@ def main(argv=None):
         contact(a[1], float(a[2]), float(a[3]))
     elif a[0] == "worker":
         worker(int(a[1]), int(a[2]), a[3])
+    elif a[0] == "job":
+        sys.exit(job_main(a[1:]))
     else:
         print(__doc__)
 

@@ -68,3 +68,17 @@ def test_two_stage_equivalences_methyl_hydrogens():
     assert q.sum() == pytest.approx(0.0, abs=1e-10)
     assert abs(q[0]) < abs(q_true[0])     # the restraint shrinks the buried carbon
     assert info["rrms_stage2"] >= info["rrms_stage1"] - 1e-12
+
+
+def test_two_stage_without_methyl_groups_returns_stage_one():
+    t = np.array([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) / np.sqrt(3.0)
+    xyz = np.vstack([[0, 0, 0], 1.49 * t])
+    el = ["S", "O", "O", "O", "O"]
+    q_true = np.array([1.2, -0.8, -0.8, -0.8, -0.8])
+    grid = resp.mk_grid(xyz, el)
+    esp = resp.design_matrix(xyz, grid) @ q_true
+    q, info = resp.two_stage([resp.Conformer(xyz, grid, esp)], -2.0, el, [(0, k) for k in range(1, 5)],
+                             symmetric=[[1, 2, 3, 4]])
+    assert q.sum() == pytest.approx(-2.0)
+    assert np.allclose(q[1:], q[1])
+    assert info["rrms_stage2"] == info["rrms_stage1"]
