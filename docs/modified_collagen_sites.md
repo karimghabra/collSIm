@@ -22,14 +22,15 @@ Three rules it does not break:
 
 ```
 python3 -m venv .venv && .venv/bin/pip install -r requirements-modcoll.txt
-.venv/bin/python -m pytest tests/modcoll --ignore-glob='*test_ions*'   # 191 tests, about 50 s
+.venv/bin/python -m pytest tests/modcoll --ignore-glob='*test_ions*'   # 208 tests, a few minutes
 .venv/bin/python -m modcoll.cli_ensemble              # S1, about 2 min
 .venv/bin/python -m modcoll.cli_stagger --chemistry succ    # S2, about 3 min on 12 threads
 .venv/bin/python -m modcoll.cli_stagger --chemistry acet
 .venv/bin/python -m modcoll.cli_stagger --chemistry mixed
 .venv/bin/python -m modcoll.cli_stagger --chemistry succ --f 0,0.8,0.9,0.97,1 \
     --ph 3.8,4.0,4.2,4.4,4.6 --outdir results/modcoll/stagger_succ_phscan
-.venv/bin/python -m modcoll.cli_composition           # composition scan, about 16 min on 12 threads
+.venv/bin/python -m modcoll.cli_composition           # composition scan, about 25 min on 12 threads
+.venv/bin/python -m modcoll.cli_solubility            # pair second virial coefficient, a few hours on 12 threads
 ```
 
 The tests of the ion model (`tests/modcoll/test_ions_*`) are described in
@@ -599,16 +600,18 @@ Two observations are matched.
    required to be 4.2 within a tolerance band. How a precipitation pH maps
    onto an isoelectric point is itself uncertain, so everything is reported
    for three bands: +-0.1, +-0.2 and +-0.3.
-2. **Solubility at pH 7.** The model computes no solubility. As a stand-in
-   the molecule is required to carry at pH 7.0 at least twice the net charge
-   of unmodified collagen at that pH (2 x 34.6 = 69 e), unmodified collagen
-   being what does assemble there (`--soluble-factor`). This turns out not to
-   constrain anything: the least charged composition in the widest band still
-   carries -95 e (`solubility_threshold.csv`; the threshold would have to
-   exceed 95 e to remove a single composition, and at 150 e two thirds of the
-   +-0.3 set are still there). **Solubility at pH 7 follows from the
-   isoelectric point being near 4.2 and adds no information about the
-   composition.**
+2. **Solubility at pH 7.** This is not judged here. An earlier version of
+   this scan stood in for it with a threshold on the net charge at pH 7 (at
+   least twice that of unmodified collagen). That criterion was wrong in
+   kind and has been removed: a net charge says nothing about whether two
+   molecules attract. By it, native collagen, +35 e at pH 7 in this model,
+   would be about as soluble at neutral pH as in dilute acid, and nothing in
+   it explains why native collagen dissolves in dilute acid yet assembles at
+   neutral pH. Solubility is now computed from the pair interaction, as a
+   second virial coefficient, in
+   [Solubility from the pair interaction](#solubility-from-the-pair-interaction-resultsmodcollsolubility),
+   and the inverse problem is redone with it there. The sets below are the
+   compositions consistent with the precipitation pH alone.
 
 | | 4.2 +- 0.1 | 4.2 +- 0.2 | 4.2 +- 0.3 |
 |---|---|---|---|
@@ -621,7 +624,7 @@ Two observations are matched.
 | least succinylation, deamidation at most the liming level | 65 % | 27.5 % | 0 (with complete acetylation) |
 | least succinylation, any deamidation | 0 | 0 | 0 |
 | a composition without succinylation needs at least | 70 % acetylation and 55 % deamidation | 52.5 % and 35 % | 35 % and 18 % |
-| smallest net charge at pH 7.0 in the set | -141 e | -116 e | -95 e |
+| smallest net charge at pH 7.0 in the set (description only) | -141 e | -116 e | -95 e |
 
 Said plainly:
 
@@ -704,8 +707,9 @@ quantity: it swings by tens of per cent (shaded range in
    band. The minimum succinylation any solution needs is zero.
 5. Every consistent composition has a substantial share of its amines
    acylated: at least 32.5 % for +-0.1, 20 % for +-0.2 and 10 % for +-0.3.
-6. The solubility criterion at pH 7 never excludes a composition; the least
-   charged consistent composition carries 71 e or more.
+6. Every consistent composition carries at least 71 e of net charge at pH 7
+   (a description; it is not a solubility criterion, see the pair-interaction
+   section).
 7. The consistent set is large: 15-32 %, 32-58 % and 48-75 % of the grid for
    the three bands.
 
@@ -890,9 +894,10 @@ What this says:
   to 4.8 depending on method and electrolyte (Zhang et al. 2007; Miyata et al.
   1979, US 4,164,559; Miyata & Dunn 1988, US 4,748,152); a band of +-0.3 does
   not cover that whole span.
-- **Solubility.** "Soluble at pH 7" is a threshold on the net charge. The model
-  computes no solubility, and the threshold happens not to matter: no
-  composition in any band comes near it.
+- **Solubility, from the isoelectric point alone.** The sets above use only
+  the precipitation pH. Whether a composition is also soluble at pH 7 and
+  in PBS is a question about the pair interaction, answered (with its own
+  limits) in the pair-interaction section below.
 - **Ion binding.** The zero-charge pH here is the zero of the proton charge.
   An electrokinetic isoelectric point also moves with bound or accumulated
   ions, by two pH units for native collagen between 0.1 and 10 mM KCl
@@ -922,6 +927,618 @@ What this says:
   "Holds across the region" means at those nine, at pH 3.8-4.6 and 10-150 mM.
   Everything S2 says about its own limits (the hydrophobic strength, fixed
   separation, Debye-Hueckel) applies unchanged.
+
+## Solubility from the pair interaction (`results/modcoll/solubility/`)
+
+`modcoll/solubility.py`, `modcoll/cli_solubility.py`, figures in
+`modcoll/solubility_figures.py`.
+
+### Why a net-charge threshold cannot do it
+
+Native type I collagen dissolves in dilute acid and comes out of solution,
+as D-banded fibrils, when the solution is brought to neutral pH and
+physiological salt and warmed, while a cold neutral solution stays clear
+(Gross 1958; Gross & Kirk 1958; Wood & Keech 1960; Williams et al. 1978;
+Kadler et al. 1996); the assembly is endothermic and entropy driven (Kadler,
+Hojima & Prockop 1987); acid solutions are salted out by 0.7-0.9 M NaCl
+(Miller & Rhodes 1982; the purification steps of Maher et al. 2022 and Wang
+et al. 2022). In dilute acid the molecule carries a large net charge of one
+sign and long-range repulsion keeps it dispersed (Morozova & Muthukumar
+2018). A rule that calls a molecule soluble when its net charge is large
+cannot reproduce this: in this model native collagen carries +35 e at pH 7,
+so it would be called soluble at neutral pH, and the rule has no place for
+salt or temperature. Whether molecules stay apart depends on whether two of
+them attract on balance. That is what the osmotic second virial coefficient
+measures (McMillan & Mayer 1945; for proteins George & Wilson 1994, Neal,
+Asthagiri & Lenhoff 1998), and it can be computed from the pair energy the
+stagger scan already evaluates.
+
+### The measure
+
+For two molecules with relative placement X (all positions and
+orientations of B with respect to A) and pair energy U(X),
+
+```
+B2 = -1/2 integral dX [ exp(-U(X)/kT) - 1 ]          (nm^3 per pair of molecules)
+Pi / (c kT) = 1 + B2 c + ...
+```
+
+B2 > 0: the pair repels on balance (good solvent; the solution is stable).
+B2 < 0: it attracts on balance (aggregation, precipitation).
+
+Here the placements are those of two **aligned** rods: B's axis parallel to
+A's at transverse offset rho, displaced by the stagger Delta along it,
+parallel or antiparallel with probability 1/2 each, and each molecule
+turned about its own axis by a uniformly distributed angle. Moving B round A
+at fixed |rho| and turning either molecule only changes the two facing
+azimuths (fa, fb) of the stagger scan, so the integral over the direction of
+rho and the two rotations is the uniform average over (fa, fb):
+
+```
+B2 = 1/2 sum_o { pi d_c^2 L  -  pi int_{d_c}^{inf} rho drho  int dDelta  < exp(-E_o(rho, Delta, fa, fb)) - 1 >_{fa,fb} }
+```
+
+- E_o is the energy of the stagger scan (screened Coulomb between every pair
+  of charged sites plus the hydrophobic contact term), now evaluated at axis
+  separation rho instead of only at contact.
+- The first term is the hard core: two parallel cylinders of diameter d_c =
+  1.65 nm (the contact distance of the stagger scan) and length L = 290.4 nm
+  (the helix) cannot overlap, so the Mayer function is -1 there. pi d_c^2 L =
+  B2_hc = 2484 nm^3 is the value for hard rods. End-to-end placements with
+  rho < d_c are left out.
+- Reported: B2, b2 = B2 / L (nm^2), the reduced B2* = B2 / B2_hc (1 = hard
+  rods, < 0 = net attraction), the deepest bound state F_best = min over
+  (orientation, rho, Delta) of -ln < exp(-E) >_{fa,fb} (a pair at fixed
+  placement free to rotate) with its stagger, and the lowest single energy
+  E_min split into its electrostatic and hydrophobic parts.
+- For a random mixture of patterns the solution B2 is the average of the
+  pair coefficients, sum x_i x_j B_ij, estimated as the mean over random
+  pattern pairs (4 per composition; identical molecules where every
+  fraction is 0 or 1).
+
+Numerics. The inner (Delta, fa, fb) integral is one FFT stagger scan per
+separation (`StaggerScanner`): 24 x 24 facing angles, Delta in 0.2 nm steps
+over the whole overlap plus 12 Debye lengths each side. The rho integral runs
+over 49 separations, 0.025 nm apart near contact, where the attraction
+lives, then 0.1 and 0.25 nm, then geometric (ratio 1.2) out to contact + max(3
+nm, 12 Debye lengths). On each interval the Mayer integrand is interpolated
+by an exponential (exact for a decaying Mayer function and for the Boltzmann
+weight of a bound state), linearly where it changes sign. The last interval
+carries at most 1.1 % of the tail in any reported condition (columns
+`tail_end_*`). Tests: a two-point-charge case against a direct double
+integral in (rho, Delta) without the FFT (agreement 1 %), the hard-rod value
+exactly when every interaction is switched off, the electrostatic term
+vanishing at very high salt, B2 unchanged when the two molecules are
+exchanged, and the hydrophobic minimum scaling with the temperature law.
+
+Temperature. Energies are in kT at the temperature of the solution. The
+Bjerrum length follows the permittivity of water (Malmberg & Maryott 1956),
+scaled to the package's 0.71 nm at 25 C; it moves by 4 % over 4-37 C. The
+hydrophobic strength follows the engine's law (src/sim.cpp, README
+"Temperature"): the engine multiplies its hydrophobic channel by 1 + 0.013 (T
+- 310.15 K) while kT scales with T, which in kT units relative to 25 C is a
+factor 0.73 at 4 C and 1.14 at 37 C. pKa values are not moved with
+temperature.
+
+The in-register window. The centred hydrophobic product makes any molecule
+attract an unshifted copy of itself by about 90 kT (the sum of h_i^2,
+whatever the residues are). With every stagger kept, that in-register
+parallel pair dominates every attractive result and hides the D register. B2
+therefore leaves out parallel staggers within 5 nm of zero, as the stagger
+scan does (its lag_min), counting them as neither attractive nor repulsive.
+The variant table shows the result with every stagger kept.
+
+What the measure is not:
+
+- **Aligned rods only.** In an isotropic solution most encounters are
+  crossed: crossed rods add Onsager's (pi/4) L^2 d_c, about 44 B2_hc, of
+  excluded volume per pair and cannot make side-by-side contacts. Binding
+  from solution also costs the orientational entropy of aligning two 290 nm
+  rods. For rigid rods that must stay aligned within about 0.5 nm over half
+  their length that cost is of order ln(2 / delta_gamma^2), about 12 kT, and
+  an isotropic solution would then need |B2*| of order 10^6 or more before
+  attraction won; for a semiflexible molecule (persistence length about 60
+  nm) the cost is much smaller and is not computed here. The sign of B2 is
+  therefore a statement about aligned molecules, and its magnitude, not only
+  its sign, is reported. Comparisons between conditions (cold against warm,
+  low against high salt) rest on those magnitudes.
+- Everything the stagger scan assumes: rigid straight molecules,
+  side chains fixed, Debye-Hueckel electrostatics with point charges and a
+  soft core, independent-site protonation, the assumed hydrophobic strength.
+- Pairs, not assemblies. Fibril formation is nucleated and cooperative
+  (Kadler et al. 1987). B2 says which way the pair balance tips, not how fast
+  or into what structure.
+
+### Native control first (`native_map.csv`, `native_control.csv`, `fig_native_control.png`, `fig_native_salt.png`)
+
+Unmodified collagen, recommended pKa set, intact chain ends, pH 2-10, 1-1000
+mM, 4, 25 and 37 C (the fixed facts it is compared with: soluble in dilute
+acid at low salt; salted out of acid solution at a few tenths molar and above;
+assembling into D-periodic fibrils at neutral pH and physiological salt when
+warm; neutral solutions kept cold stay clear until warmed: Gross, Highberger &
+Schmitt 1955; Gross & Kirk 1958; Wood & Keech 1960; Williams et al. 1978;
+Miller & Rhodes 1982; Kadler et al. 1996).
+
+| condition | pH | I (mM) | T (C) | net charge (e) | B2* | verdict | deepest state (kT; orientation, stagger) | deepest parallel state (kT, stagger) | E_min: charges / hydrophobic (kT) |
+|---|---|---|---|---|---|---|---|---|---|
+| dilute acid, low salt | 3 | 10 | 25 | +268 | 90.1 | soluble | 0.0; antiparallel, 5.10 D | 0.0, 5.10 D | 0.0 / 0.0 |
+| dilute acid, 150 mM | 3 | 150 | 25 | +268 | 6.67 | soluble | -1.6; parallel, 4.29 D | -1.6, 4.29 D | 8.5 / -13.9 |
+| dilute acid, 500 mM | 3 | 500 | 25 | +268 | -0.971 | attractive | -10.9; antiparallel, 1.64 D | -8.8, 1.00 D | 7.3 / -22.0 |
+| dilute acid, 1 M | 3 | 1000 | 25 | +268 | -655 | attractive | -16.9; antiparallel, 0.37 D | -14.3, 1.00 D | 4.7 / -25.1 |
+| neutral, physiological, warm | 7.4 | 150 | 37 | +32 | -1.0 x 10^6 | attractive | -24.4; antiparallel, 0.39 D | -24.2, 1.01 D | -7.0 / -22.2 |
+| neutral, physiological, room | 7.4 | 150 | 25 | +32 | -8.6 x 10^4 | attractive | -21.6; antiparallel, 0.39 D | -21.6, 1.01 D | -6.9 / -19.5 |
+| neutral, physiological, cold | 7.4 | 150 | 4 | +32 | -911 | attractive | -16.6; parallel, 1.01 D | -16.6, 1.01 D | -6.8 / -14.2 |
+| neutral, low salt | 7 | 10 | 25 | +35 | -3.5 x 10^9 | attractive | -32.2; antiparallel, 1.70 D | -26.5, 1.01 D | -30.1 / -6.3 |
+| neutral, 1 M | 7 | 1000 | 25 | +35 | -2.2 x 10^4 | attractive | -20.9; antiparallel, 0.37 D | -18.1, 1.00 D | 0.4 / -25.1 |
+| near the isoelectric point | 9.5 | 150 | 25 | +14 | -1.7 x 10^5 | attractive | -22.7; antiparallel, 0.39 D | -21.9, 1.01 D | -8.0 / -19.5 |
+
+**The native control against the established facts**, stated one by one:
+
+| established fact | source | this model (pair B2, base parameters) | verdict |
+|---|---|---|---|
+| soluble in dilute acid at low ionic strength | Morozova & Muthukumar 2018; Gross, Highberger & Schmitt 1955 | B2* = +90 at pH 3, 10 mM; > 0 for every pH up to 4 at 1-150 mM | **reproduced** |
+| salted out of dilute acid at 0.7-0.9 M NaCl (purification step, usually in the cold) | Maher et al. 2022; Wang et al. 2022 (methods); Miller & Rhodes 1982 | at pH 3, B2 changes sign between 0.5 and 1 M at 4 C, between 0.3 and 0.5 M at 25 and 37 C | **reproduced at 4 C**; at room temperature at too low a salt |
+| soluble at pH 7.4 and 150 mM in the cold (2-4 C), assembling on warming | Gross 1958; Gross & Kirk 1958; Williams et al. 1978 | B2* = -911 at 4 C | **not reproduced**: cold neutral collagen attracts in the model |
+| assembles at pH 7.4 and 150 mM at 25-37 C | Wood & Keech 1960; Williams et al. 1978; Kadler et al. 1987 | B2* = -8.6 x 10^4 at 25 C, -1.0 x 10^6 at 37 C | **reproduced** |
+| assembly is endothermic and entropy driven: much weaker in the cold | Kadler et al. 1987 (dH = +56 kcal/mol, dS = +220 cal/(K mol)); Leikin, Rau & Parsegian 1994 | B2 falls by a factor 1100 from 37 to 4 C (only through the contact term) | **direction reproduced**, size too small to change the sign |
+| D-periodic register at neutral pH | Hulmes et al. 1973 | parallel 1 D is the deepest parallel state; an antiparallel 0.39 D pair is as deep within 0.2 kT at 25-37 C | **partly** |
+| isoelectric point of acid-soluble type I about 9.3 | Hattori et al. 1999 | 9.84 (independent sites, bulk pKa) | 0.5 too high (known limit) |
+
+The term responsible for the one clear failure, cold solubility at neutral
+pH: the **charge-pattern electrostatics**, which on their own are already net
+attractive at pH 7.4 and 150 mM (electrostatics-only B2* = -6.8 at 4 C) and
+have no temperature dependence beyond the Bjerrum length, together with the
+absence of any entropy cost of binding (the aligned-rod B2 does not charge the
+orientational and conformational entropy a pair loses). The contact term's
+temperature law cannot fix it alone: replacing the engine's law by the shape
+of the measured free energy of fibril formation, s(T) = g(T) / g(25 C) with g
+= (dH - T dS) / RT and Kadler's dH, dS (variant "contact term with Kadler 1987
+temperature law": 0.56 at 4 C, 1.23 at 37 C, unchanged at 25 C), moves B2* at
+pH 7.4 and 150 mM from -911 to -85 at 4 C and from -1.0 x 10^6 to -5.0 x 10^6
+at 37 C; the cold/warm contrast becomes 6 x 10^4 instead of 1100, every 25 C
+result and every acid-side result is unchanged, and the cold solution still
+attracts. Calibrating the magnitude as well (eps(T) = dh - T ds per contact,
+fitted to Kadler's dG and critical concentration) needs a pair-to-fibril
+mapping and is the first follow-up below; the force measurements also say the
+attraction is water-mediated bridging between polar residues rather than a
+hydrophobic effect (Leikin, Rau & Parsegian 1995), which bears on the
+functional form of the contact term, not only on its temperature law.
+
+Read across the map (`fig_native_control.png`, B2* at 25 C):
+
+- **Soluble in dilute acid: reproduced.** B2 > 0 at every pH up to 4 from 1
+  to 150 mM, and at pH 4.5 up to 50 mM; B2* = +90 at pH 3 and 10 mM, +6.7 at
+  150 mM. The excluded volume at 10 mM is 90 times that of hard rods: the
+  screened repulsion keeps molecules about 15 nm apart.
+- **Assembling at neutral pH: reproduced; the register is a near tie.** From
+  pH 5 upward B2 < 0 at every ionic strength. At pH 7.4 and 150 mM the
+  deepest parallel state is the 1 D register (1.01 D) at every temperature.
+  An antiparallel pair at 26.2 nm (0.39 D) is as deep within 0.2 kT at 25 and
+  37 C (-21.6 against -21.6 kT; -24.4 against -24.2 kT), so the model does not
+  single out the D register at body temperature; at 4 C parallel 1 D is the
+  deepest state outright. The antiparallel competitor comes from the
+  hydrophobic product (alone it puts its deepest antiparallel state at 24.6
+  nm), and it grows with temperature. This is the stagger scan's "no
+  polarity selection" again, now inside a free energy.
+- **Salting out of acid solutions: reproduced, at about the right salt.** At
+  pH 3 B2 changes sign between 300 and 500 mM at 25 C, between 500 mM and 1 M
+  at 4 C, between 300 and 500 mM at 37 C (B2* = -655 at 1 M, 25 C). Acid
+  solutions of type I collagen are salted out at about 0.7-0.9 M NaCl in the
+  cold (Miller & Rhodes 1982). The salt does it by screening the repulsion of
+  the net charge until the hydrophobic contact wins (net-charge B2* at pH 3
+  falls from +91 at 10 mM to +1.5 at 1 M; with the hydrophobic term
+  switched off the acid form never salts out, `variants.csv`).
+- **Cold against warm at neutral pH: partly.** At pH 7.4 and 150 mM B2* is
+  -911 at 4 C, -8.6 x 10^4 at 25 C and -1.0 x 10^6 at 37 C: the attraction
+  weakens by three orders of magnitude in the cold and the deepest state is 8
+  kT shallower, but B2
+  does not change sign. The model does not make a cold neutral solution
+  soluble. Two terms are responsible. The charge pattern alone is already net
+  attractive there (electrostatics-only B2* = -7) and does not weaken in the
+  cold (the Bjerrum length grows slightly); and the hydrophobic term, though
+  it loses 27 % of its strength at 4 C, still contributes 14 kT at contact. A
+  sign change would need either a hydrophobic term that is far weaker in the
+  cold than the engine's 1.3 %/K law, or the orientational and
+  conformational entropy a real pair pays on binding, which this measure
+  does not charge (see "What the measure is not").
+
+**Why native collagen is acid-soluble, in this model.** The decomposition
+(columns `B2_star_el`, `_hy`, `_net_hy`, `_net`; right panel of
+`fig_native_control.png`) answers it:
+
+| pH | net charge | positive / negative charges | B2* full | charges only | hydrophobic only | net charge + hydrophobic (pattern removed) | net charge only |
+|---|---|---|---|---|---|---|---|
+| 3, 10 mM, 25 C | +268 | +286 / -18 | 90.1 | 90.1 | -2.7 x 10^4 | 91 | 91 |
+| 3, 150 mM, 25 C | +268 | +286 / -18 | 6.67 | 6.67 | -2.7 x 10^4 | 6.66 | 6.66 |
+| 3, 1000 mM, 25 C | +268 | +286 / -18 | -655 | 1.59 | -2.7 x 10^4 | -1.2 x 10^3 | 1.54 |
+| 4.5, 10 mM, 25 C | +122 | +286 / -164 | 46.8 | 48 | -2.7 x 10^4 | 49.3 | 49.3 |
+| 5, 10 mM, 25 C | +78 | +285 / -207 | -1.5 x 10^5 | -1.8 x 10^3 | -2.7 x 10^4 | 32.3 | 32.3 |
+| 5, 150 mM, 25 C | +78 | +285 / -207 | -4.3 x 10^3 | 1.68 | -2.7 x 10^4 | -1.1 x 10^3 | 2.55 |
+| 7, 10 mM, 25 C | +35 | +272 / -238 | -3.5 x 10^9 | -2.5 x 10^9 | -2.7 x 10^4 | -374 | 12.3 |
+| 7.4, 150 mM, 25 C | +32 | +270 / -238 | -8.6 x 10^4 | -7.19 | -2.7 x 10^4 | -1.6 x 10^4 | 1.35 |
+| 7.4, 150 mM, 37 C | +32 | +270 / -238 | -1.0 x 10^6 | -7.5 | -5.3 x 10^5 | -3.0 x 10^5 | 1.35 |
+
+1. At pH 2-4.5 the carboxylates are mostly protonated: the molecule is a
+   near single-signed polycation (+286 positive against -18 negative charges
+   at pH 3). The screened repulsion of that net charge is long-ranged and
+   large: it alone gives B2* = +91 at 10 mM, the same as the full energy, so
+   molecules never reach the contact distance at which the hydrophobic
+   term (-2.7 x 10^4 on its own) and any salt bridges would act.
+2. Above pH 4.5 the carboxylates ionise (-207 e at pH 5, -238 e at pH 7)
+   while the positive charges stay. The net charge falls to +78 e at pH 5 and
+   +35 e at pH 7, and its repulsion becomes weak (net-charge-only B2* = 1.4
+   at pH 7, 150 mM: almost hard rods), but more importantly the surface now
+   carries both signs. Pairs of opposite charges facing each other at contact
+   and the hydrophobic contact make the pair attract (B2* = -7 from the
+   charges alone, -10^4 with the hydrophobic term, even with the pattern
+   removed).
+3. So the switch is not "high net charge = soluble": native collagen at pH 5
+   still carries +78 e and attracts. It is the loss of the negative charges
+   at low pH that leaves nothing to pair with, plus a net charge large enough
+   to keep the hydrophobic contact out of reach. The old net-charge criterion
+   would have called native collagen at pH 7 soluble; with the pattern
+   removed (`net` term) the model agrees with it (B2* > 0), and that is
+   exactly the part of the physics it misses.
+
+### Which parameter decides what (`variant_verdicts.csv`, `variants.csv`)
+
+Nothing has been tuned. Each row changes one stated parameter of the pair
+energy (two in one row; the last row changes the temperature law of the
+contact term, see the native control), and is reported next to the base result; no
+variant replaces the base parameters anywhere else. Six native facts are
+tested (soluble at pH 3 and 10 or 150 mM, salted out at pH 3 and 1 M,
+soluble at pH 7.4 / 150 mM / 4 C, attractive at pH 7.4 / 150 mM / 37 C with
+the D register as its deepest state), and the five bench criteria for six
+modified compositions (90 % succinylated, fully acetylated, fully
+deamidated, and c0, c1, c3 of the composition scan; two pattern pairs each,
+30 criteria).
+
+| variant | native facts (of 6) | B2 at 4 C / B2 at 37 C (pH 7.4, 150 mM) | modified criteria met (of 30) | soluble at pH 7, 10 mM (of 6) | soluble in PBS (of 6) | water / acetate criteria missed (of 18) |
+|---|---|---|---|---|---|---|
+| base | 4 (misses: cold, D register) | 9 x 10^-4 | 18 | 0 | 0 | 0 |
+| eps_h x 0.5 | 3 (misses: salting out at 1 M, cold, D register) | 0.13 | 20 | 0 | 2 | 0 |
+| eps_h x 2 | 3 (misses: acid 150 mM, cold, D register) | 3 x 10^-8 | 18 | 0 | 0 | 0 |
+| contact 1.55 nm | 4 (misses: cold, D register) | 1 x 10^-4 | 18 | 0 | 0 | 0 |
+| contact 1.80 nm | 5 (misses: cold) | 0.014 | 20 | 0 | 2 | 0 |
+| contact 2.00 nm | 4 (misses: salting out at 1 M, cold) | 0.027 | 22 | 1 | 4 | 1 |
+| soft core 0.5 nm | 5 (misses: cold) | 8 x 10^-4 | 18 | 0 | 0 | 0 |
+| soft core 0.7 nm | 4 (misses: cold, D register) | 7 x 10^-4 | 19 | 0 | 1 | 0 |
+| contact 1.80 nm, soft core 0.5 nm | 5 (misses: cold) | 0.013 | 22 | 1 | 3 | 0 |
+| every stagger kept | 4 (misses: cold, D register) | 3 x 10^-13 | 18 | 0 | 0 | 0 |
+| no hydrophobic term | 3 (misses: salting out at 1 M, cold, D register) | 0.9 | 20 | 0 | 2 | 0 |
+| contact term with Kadler 1987 temperature law | 4 (misses: cold, D register) | 2 x 10^-5 | 18 | 0 | 0 | 0 |
+
+What it says:
+
+- **Dilute acid and acetate at pH 4.2 hardly depend on the parameters.**
+  Every variant makes every composition soluble in deionized water (pH 3.5,
+  1 mM) and, with one exception (fully deamidated collagen in 50 mM acetate
+  with a 2.0 nm contact), attractive in acetate at pH 4.2. Those two
+  observations, and native acid solubility at low salt, are robust results
+  of the model.
+- **Solubility at pH 7 and in PBS is not reproduced with the base
+  parameters**, for any composition tested: all six attract at pH 7 and 10
+  mM and in PBS. The responsible term is the short-range electrostatics:
+  point charges with a 0.35 nm soft core in bulk water, each opposite pair
+  at contact worth up to 2 kT, no desolvation penalty, no charge regulation.
+  Two fully succinylated molecules of -179 e each still bind by 39 kT at pH 7
+  and 10 mM (checked against the direct double sum), through an antiparallel
+  overlap of their ends where arginines face carboxylates; the overlap
+  region of each molecule carries -32 e. At 150 mM the hydrophobic term adds
+  to it.
+- **A larger contact distance restores part of it, nothing restores all of
+  it.** A contact at 1.8 nm with a 0.5 nm soft core, or at 2.0 nm (a layer of
+  0.3-0.5 nm of water or acyl groups between the surfaces), makes three or
+  four of the six compositions soluble in PBS and the most deamidated mixture
+  (c3) soluble at pH 7 and 10 mM as well; the 1.8 nm variant keeps every
+  native fact but cold solubility, the 2.0 nm one also loses the salting out
+  at 1 M. A larger soft
+  core alone does almost nothing. At pH 7 and 10 mM five of six compositions
+  stay attractive in every variant. These are sensitivity results, not a
+  fit: the base parameters are not changed anywhere.
+- **The hydrophobic strength matters where the native facts are**: halving
+  it removes the salting out of acid solutions, doubling it makes acid
+  solutions at 150 mM attractive; the base value is the only one of the
+  three that gets both. Halving it also shrinks the cold / warm contrast at
+  neutral pH from a factor 1100 to a factor 8. Without the hydrophobic term the acid form
+  never salts out and temperature has almost no effect (ratio 0.9): in this
+  model the temperature dependence of assembly is entirely the hydrophobic
+  term's.
+- **No variant makes a cold neutral solution of native collagen soluble.**
+  Every one, the Kadler-shaped temperature law included, leaves B2 < 0 at
+  pH 7.4, 150 mM and 4 C (see the native control for why).
+- **The register at 37 C is a near tie in most variants** (the base
+  parameters miss it by 0.2 kT); a 1.8 nm contact or a 0.5 nm soft core tip
+  it to parallel 1 D.
+- Keeping every stagger (no in-register window) changes nothing in acid and
+  makes the in-register parallel pair the deepest state at neutral pH, as
+  expected from the centred hydrophobic product.
+
+### Modified collagen (`modified_map.csv`, `fig_modified_maps.png`)
+
+Ninety per cent and complete succinylation, acetylation and deamidation, and
+the representative mixtures c0-c3, c5-c7 of the composition scan (c4 is
+complete succinylation), at pH 3-7.4, 1-300 mM and 25 C, plus 4 and 37 C at
+pH 4.2 and 7.4 (10 and 150 mM). Three random pattern pairs per composition
+(one where every molecule is the same); the table holds the mean B2 over
+pairs (the B2 of a random mixture), its range over pairs and the share of
+pairs that attract.
+
+B2* at 25 C, 10 mM (sign is what matters; magnitudes span many decades):
+
+| composition | pH 3 | pH 3.5 | pH 4 | pH 4.2 | pH 4.5 | pH 5 | pH 6 | pH 7 | pH 7.4 |
+|---|---|---|---|---|---|---|---|---|---|
+| succinylated 100 % | 61 | 49 | -5.5e9 | -5.4e15 | -1.3e19 | -1.4e13 | -7.9e12 | -1.5e11 | -5.9e10 |
+| succinylated 90 % | 64 | 53 | -3.8e7 | -8.9e13 | -3.2e18 | -4.7e14 | -10e14 | -3.1e13 | -1.2e13 |
+| acetylated 100 % | 62 | 53 | -1.1e4 | -8.6e7 | -3.3e13 | -1.9e15 | -4.4e13 | -3.5e11 | -1.1e11 |
+| acetylated 90 % | 65 | 56 | -380 | -3.7e6 | -1.7e12 | -1.4e15 | -6.2e14 | -4.6e12 | -1.5e12 |
+| deamidated 100 % | 88 | 77 | 52 | -9.9e7 | -3.3e17 | -2.4e21 | -1.8e18 | -1.4e15 | -3.6e14 |
+| deamidated 90 % | 88 | 78 | 54 | -1.6e6 | -1.9e16 | -2.0e21 | -2.0e19 | -4.3e16 | -1.3e16 |
+| c0 most succinylation | 60 | 47 | -6.5e11 | -3.8e17 | -2.1e18 | -6.9e13 | -7.6e12 | -6.7e10 | -2.0e10 |
+| c1 least succinylation | 63 | 48 | -6.9e10 | -1.8e14 | -1.8e15 | -2.3e11 | -1.8e9 | -5.4e7 | -2.2e7 |
+| c2 most acetylation | 60 | 46 | -3.2e10 | -4.4e14 | -7.5e15 | -1.0e11 | -4.7e9 | -2.0e8 | -8.6e7 |
+| c3 most deamidation | 67 | 52 | -8.0e10 | -6.4e14 | -3.7e15 | -4.0e11 | -1.1e10 | -1.5e8 | -5.0e7 |
+| c5 least acylation | 81 | 69 | -1.7e3 | -1.1e10 | -2.0e16 | -3.1e16 | -9.0e13 | -6.5e11 | -2.3e11 |
+| c6 fill | 62 | 51 | -1.6e6 | -2.0e11 | -4.7e16 | -7.4e15 | -1.2e12 | -7.3e10 | -3.7e10 |
+| c7 everything modified | 58 | -110 | -3.2e15 | -3.6e16 | -1.6e11 | -4.1e8 | -600 | 96 | 97 |
+
+and at the bench conditions:
+
+| composition | deionized water (pH 3.5, 1 mM): soluble | pH 7, 10 mM: soluble | PBS (pH 7.4, 150 mM): soluble | acetate pH 4.2, 10 mM: precipitates | acetate pH 4.2, 50 mM: precipitates |
+|---|---|---|---|---|---|
+| succinylated 100 % | 490 yes | -1.5e11 **no** | -180 **no** | -5.4e15 yes | -3.5e7 yes |
+| succinylated 90 % | 530 yes | -3.1e13 **no** | -430 **no** | -8.9e13 yes | -7.9e6 yes |
+| acetylated 100 % | 530 yes | -3.5e11 **no** | -8.6e3 **no** | -8.6e7 yes | -1.1e5 yes |
+| acetylated 90 % | 560 yes | -4.6e12 **no** | -1.8e4 **no** | -3.7e6 yes | -3.1e4 yes |
+| deamidated 100 % | 770 yes | -1.4e15 **no** | -1.0e5 **no** | -9.9e7 yes | -3.2e3 yes |
+| deamidated 90 % | 780 yes | -4.3e16 **no** | -1.9e5 **no** | -1.6e6 yes | -680 yes |
+| c0 most succinylation | 470 yes | -6.7e10 **no** | -130 **no** | -3.8e17 yes | -4.8e7 yes |
+| c1 least succinylation | 480 yes | -5.4e7 **no** | -130 **no** | -1.8e14 yes | -1.8e7 yes |
+| c2 most acetylation | 460 yes | -2.0e8 **no** | -180 **no** | -4.4e14 yes | -1.2e7 yes |
+| c3 most deamidation | 530 yes | -1.5e8 **no** | -160 **no** | -6.4e14 yes | -4.6e7 yes |
+| c5 least acylation | 690 yes | -6.5e11 **no** | -3.0e3 **no** | -1.1e10 yes | -1.3e5 yes |
+| c6 fill | 510 yes | -7.3e10 **no** | -3.5e3 **no** | -2.0e11 yes | -1.5e6 yes |
+| c7 everything modified | 400 yes | 96 yes | -28 **no** | -3.6e16 yes | -8.4e7 yes |
+
+What the map shows:
+
+- **Every composition is soluble on the acid side of its isoelectric point
+  at low salt** (B2* = +50 to +90 at pH 3-3.5 and 10 mM, +400 to +900 at 1
+  mM), for the same reason as native collagen: the carboxyls are protonated,
+  the molecule is a polycation. This is the side the material is on when it
+  is dissolved in deionized water (next section).
+- **Every composition attracts strongly around its isoelectric point** (pH
+  4-5 at 10 mM: B2* below -10^9 for most), where the net charge is near zero
+  and both signs are present. This is the precipitation near pH 4.2, and the
+  precipitate's stability in acetate at pH 4.2: it is the most robust
+  prediction of the model, and it holds at 4, 25 and 37 C.
+- **At pH 7 the model does not reproduce the solubility of the modified
+  material.** At 150 mM every composition attracts (B2* = -28 to
+  -2 x 10^5), and at 10 mM every composition but c7 does, by many decades
+  more. Only at 1 mM, the ionic strength of deionized water, do some
+  compositions repel: the four mixtures whose isoelectric point is 4.2
+  (c0-c3, -172 to -210 e at pH 7) and everything-modified c7 (-304 e), which
+  also repels at 10 mM. Everything with an isoelectric point of 4.29 or more
+  attracts even at 1 mM, including complete succinylation, which carries
+  -179 e, as much as c1, which repels: the net charge alone does not decide
+  it. The deepest state is nearly always an antiparallel pair overlapping
+  only near the ends (stagger about 236 nm), bound by 25-55 kT of contact
+  electrostatics plus a hydrophobic share of 8 kT; at 150 mM the
+  antiparallel 0.38 D hydrophobic state of native collagen appears as well
+  for acetylated and deamidated material. What is responsible is set out in
+  the variant table above: fixed point charges in bulk water at contact,
+  with no desolvation cost and no charge regulation. The bench says the
+  opposite (soluble at pH 7 and in PBS), so in this respect the pair model
+  is wrong, and the solubility of modified collagen at neutral pH is a fact
+  the model cannot yet explain.
+- **Temperature**: cold weakens and warmth strengthens the attraction for
+  every composition, by one to four decades in B2 between 4 and 37 C at 150
+  mM, through the hydrophobic term; no sign changes.
+- **Salt**: on the acid side salt removes the repulsion (B2 < 0 from about
+  150-300 mM at pH 3.5, above 300 mM for fully deamidated material); around
+  the isoelectric point salt weakens the attraction (screening the contact
+  electrostatics), as the stagger scan found for the D register.
+
+### The material in deionized water (`water_dilution.csv`, `water_fit.csv`, `water_b2.csv`, `fig_water.png`)
+
+Bench readings: 0.5 % w/v in deionized water reads pH 3.27; serial two-fold
+dilutions read 3.38, 3.56, 3.79, 4.15 and 6.61. A protein dissolved in pure
+water with nothing else settles near its isoionic point (Tanford 1962), and
+for every composition here that is above pH 4. A reading of 3.27 therefore
+means the material brings its own acid. The charge balance of the solution
+(`solubility.solution_pH`),
+
+```
+[H+] - Kw/[H+] + c Z(pH) - c n_s = 0,
+```
+
+with c the molar concentration of molecules, Z(pH) the Henderson-Hasselbalch
+net charge of one molecule and n_s the strong-acid counter-anions it carries,
+gives n_s from each reading (`counter_anions_per_molecule`):
+
+| composition | isoelectric point | basic groups | anions implied by each reading (0.5, 0.25, 0.125, 0.0625, 0.031, 0.016 %) | one fixed content (rms over first five) | predicted pH at 0.016 % |
+|---|---|---|---|---|---|
+| native | 9.84 | 286 | 286.5, 296.4, 297.4, 285.2, 230.9, 39.1 | 287 (0.09 pH) | 4.17 |
+| succinylated 100 % | 4.29 | 179 | 174.7, 183.6, 181.7, 163.5, 93.3, -174.0 | 172 (0.10 pH) | 4.13 |
+| c0 most succinylation | 4.20 | 179 | 170.8, 178.8, 175.0, 153.7, 77.6, -205.4 | 166 (0.11 pH) | 4.11 |
+| c1 least succinylation | 4.20 | 190 | 176.0, 182.7, 176.8, 153.2, 76.5, -175.4 | 169 (0.11 pH) | 4.10 |
+| c3 most deamidation | 4.20 | 205 | 188.8, 194.9, 187.5, 161.1, 77.7, -203.4 | 181 (0.12 pH) | 4.08 |
+| c7 everything modified | 4.00 | 179 | 159.2, 164.5, 155.1, 124.8, 31.1, -298.6 | 149 (0.13 pH) | 4.07 |
+
+(all compositions in `water_fit.csv`)
+
+What follows from it:
+
+- **Counter-ion form.** The four most concentrated readings need a fixed
+  content of strong acid per molecule, and that content is the number of
+  basic groups of the molecule: about 287 for native collagen (Lys + Arg +
+  His = 286; 1.0 mmol/g) and 150-180 for the fully acylated compositions
+  (Arg + His = 179; 0.50-0.61 mmol/g). One fitted number reproduces the first
+  five readings to 0.09-0.13 pH units for every composition. The material
+  behaves as the fully protonated salt of a strong acid (chloride, for
+  example): every base paired with an anion, every carboxyl protonated, as a
+  protein freeze-dried from dilute strong acid would be. This holds for
+  every composition, so it does not tell them apart. A weak acid cannot do
+  it: acetic acid (pKa 4.76) alone would need 18 mmol per gram of protein
+  (1.1 g per g) to bring the 0.5 % solution of c0 to pH 3.27.
+- **Self-buffering.** On dilution the pH rises slowly because the protein's
+  own carboxyls, partly protonated at pH 3.3-4, release protons as the
+  solution thins: about 6 mM of carboxyl groups at 0.5 %, far more than the
+  0.5 mM of free protons.
+- **Where the solution sits.** At the four strongest concentrations it is
+  0.4-1.0 pH units *below* the isoelectric point of every pI-4.2 composition
+  (net charge +76 to +157 e per molecule) at an ionic strength of 0.1-2.7 mM.
+  The fifth reading (0.031 %, pH 4.15) is at the isoelectric point; the sixth
+  is far above it.
+- **The last reading cannot be produced** with the acid content of the
+  others: one fixed content predicts pH 4.1-4.2 at 0.016 %, not 6.61. With
+  the same acid content plus a base in the diluent at a constant
+  concentration, all six readings are matched to about 0.13 pH units for
+  0.15-0.26 mM of base, which is far more than deionized water holds;
+  more likely the most dilute readings are unreliable (an almost unbuffered
+  sample of sub-millimolar ionic strength, where glass electrodes drift) or
+  the diluent was not pure water.
+- **Is "soluble in deionized water" consistent with "precipitates at pH
+  4.2"?** Yes. In deionized water the material is on the acid side of its own
+  isoelectric point, at low ionic strength: the situation of native collagen
+  in dilute acid, and B2 > 0: B2* = +330 at 0.5 %, +570 to +590 at 0.25 %,
+  +910 to +980 at 0.125 % for the mixtures tested (`water_b2.csv`). It is
+  soluble for the same reason as acid-soluble collagen. Bringing it to pH
+  4.2 removes that net charge and the pair attracts strongly; at the 0.031 %
+  dilution the solution itself
+  reaches pH 4.15 and every composition attracts there; two of the three
+  pI-4.2 mixtures tested already attract at the 0.0625 % dilution (pH 3.79,
+  0.3 mM). Turbidity in the most dilute wells of such a series is therefore
+  expected and is not by itself evidence of anything new.
+
+### The inverse problem with the pair criterion (`inverse_compositions.csv`, `inverse_summary.csv`, `fig_inverse.png`)
+
+The compositions of the 0.25 grid (f_deam 0, 0.18, 0.5, 1) whose isoelectric
+point is within 4.2 +- 0.3: 33 of 60. For each, B2 at the five bench
+conditions, two random pattern pairs, for the base parameters and for the
+variant that kept every native fact but cold solubility and helped most for
+the modified material (contact 1.8 nm, soft core 0.5 nm). A composition is
+consistent if B2 > 0 in deionized water (pH 3.5, 1 mM), at pH 7 (10 mM) and
+in PBS (pH 7.4, 150 mM), and B2 < 0 in acetate at pH 4.2 (10 and 50 mM).
+
+| | pI 4.2 +- 0.1 | +- 0.2 | +- 0.3 |
+|---|---|---|---|
+| compositions in the band | 14 | 23 | 33 |
+| base: soluble in deionized water / attractive in acetate | all | all | all |
+| base: soluble at pH 7, 10 mM | 1 | 3 | 3 |
+| base: soluble in PBS | 0 | 0 | 0 |
+| **base: consistent with every observation** | **0** | **0** | **0** |
+| 1.8 nm contact: soluble in PBS | 13 | 18 | 18 |
+| 1.8 nm contact: soluble at pH 7, 10 mM | 1 | 5 | 5 |
+| **1.8 nm contact: consistent with every observation** | **1** | **5** | **5** |
+
+Said plainly:
+
+- **With the base parameters the pair criterion excludes every composition.**
+  That is not a constraint on the material; it is the failure described
+  above (the model makes modified collagen attract at neutral pH).
+- **Deionized water and acetate never discriminate**: every composition in
+  the band is soluble in water and precipitates in acetate, under both
+  parameter sets.
+- **Under the 1.8 nm variant the criterion does constrain, and hard.** PBS
+  solubility then requires an isoelectric point at or below about 4.29 (18
+  of 33), and solubility at pH 7 and 10 mM requires complete deamidation and
+  at least 75 % acylation: the five consistent compositions are (f_succ,
+  f_acet, f_deam) = (1, 0, 1), (0.75, 0.25, 1), (0.75, 0, 1), (0.5, 0.5, 1)
+  and (0.25, 0.75, 1), isoelectric points 4.00-4.14, the most negatively
+  charged corner of composition space (-224 to -304 e at pH 7). Succinylation
+  is then needed (at least 25 %), and so is deamidation far beyond the
+  liming level.
+- These constraints follow from the least certain part of the model, the
+  electrostatics at contact, and they appear only after a parameter change
+  that was not fitted to anything. They should not be read as an estimate of
+  the composition. What survives is the direction: in this model, the more
+  negative the material is at pH 7, the more likely it is to stay dissolved
+  there, and the net charge needed is larger than the isoelectric point alone
+  requires. The assays of the composition scan remain the way to identify it.
+
+### What the pair measure establishes, and what it cannot
+
+Established, in this model and robust to every parameter variant tried:
+
+- Native collagen is soluble in dilute acid at low salt because the
+  carboxylates are protonated there: the molecule is a polycation whose
+  screened net-charge repulsion keeps molecules from ever reaching contact.
+  The net charge alone accounts for the whole acid-side B2.
+- Native collagen attracts at neutral pH because the ionised carboxylates
+  give the surface both signs (contact pairing) and molecules then reach the
+  contact distance at which the hydrophobic term acts; the net charge at pH 7
+  (+35 e) is irrelevant to it.
+- Acid solutions are salted out at a few tenths molar by screening of that
+  repulsion, at lower salt when warm.
+- Modified collagen is soluble on the acid side of its isoelectric point at
+  low ionic strength, and attracts strongly near its isoelectric point:
+  "soluble in deionized water" and "precipitates near pH 4.2 and stays
+  precipitated in acetate" are both reproduced, for every composition.
+
+Not reproduced, with the term responsible:
+
+- **Modified collagen at pH 7 and in PBS** comes out attractive for every
+  composition with the base parameters (soluble only at 1 mM for the
+  isoelectric-point-4.2 mixtures). Responsible: the contact electrostatics
+  (point charges, 0.35 nm soft core, bulk dielectric, fixed charges). A
+  thicker contact layer (1.8-2.0 nm axis distance) recovers it in PBS for
+  half to two thirds of the compositions tested, not at pH 7 and 10 mM.
+- **Cold neutral solutions of native collagen** come out attractive, three
+  decades less than warm ones. Responsible: the charge-pattern attraction,
+  which has no temperature dependence, and the absence of any entropy cost of
+  binding.
+- **The D register is not selected over an antiparallel 0.39 D pair at 25-37
+  C** (tie within 0.2 kT). Responsible: the centred hydrophobic product.
+
+Cannot determine:
+
+- **Absolute solubility or a critical concentration.** B2 is a pair
+  quantity for aligned rods; the orientational and conformational entropy of
+  binding, many-body effects and the nucleated growth of fibrils are not in
+  it. Comparisons rest on sign changes and relative magnitudes.
+- **Composition**, beyond what the isoelectric point already says (next
+  sections): with the base parameters the pair criteria exclude every
+  composition, which says the model is wrong at pH 7, not that no
+  composition fits.
+- Anything about specific ion binding (chloride, phosphate, acetate):
+  monovalent salt enters only through the Debye length.
+
+### Follow-ups, in the order they matter
+
+1. **A contact free energy with the measured temperature dependence and
+   magnitude.** Replace the fixed-in-kT contact term by eps(T) = dh - T ds
+   per contact, with dh and ds chosen so that the free energy of adding a
+   molecule to a fibril, and its temperature derivative, match Kadler et al.
+   (1987) (dH = +56 kcal/mol, dS = +220 cal/(K mol), dG = -13 kcal/mol at 37
+   C, critical concentration 0.12 ug/ml at 41 C). Doing that needs a mapping
+   from a pair energy to the free energy of incorporation into a fibril (a
+   molecule in a fibril has several neighbours and loses translational and
+   orientational entropy), which is a model of its own; the "Kadler 1987
+   temperature law" variant above only borrows the shape of g(T). The force
+   measurements say the attraction is water-mediated bridging between polar
+   residues, not a hydrophobic effect (Leikin, Rau & Parsegian 1994, 1995),
+   so the contact weights should be tested on polar / hydration-bridge
+   residues as well as on the Kyte-Doolittle scale.
+2. **Charge regulation**: Monte Carlo protonation at each configuration in
+   place of mean independent-site charges (the `charge_model` interface
+   exists). It is the obvious remedy for the over-strong contact pairing that
+   makes modified collagen attract at pH 7, and it is needed before any pH
+   4.2, low-salt result is interpreted.
+3. **A hydration repulsion and a variable axis distance.** The measured
+   short-range exponential repulsion between helices (Leikin et al. 1994)
+   sets the interaxial spacing; here it is a hard wall at 1.65 nm. The
+   variant table shows the result is sensitive to exactly this distance for
+   modified collagen.
+4. **The entropy of binding.** An isotropic-solution B2 or a critical
+   concentration needs the orientational and conformational entropy a pair
+   loses on aligning; with it, weakly negative aligned B2* values (cold
+   native collagen, modified collagen in PBS) may change sign.
+5. **0-D registers.** The in-register parallel window is excluded here as in
+   the stagger scan, because the centred hydrophobic product rewards it
+   whatever the residues. A contact term that does not reward like-on-like
+   matching would let the 0-D register (segment-long-spacing-like) be
+   counted rather than excluded.
 
 ## Known limits
 
@@ -958,9 +1575,18 @@ Read the results above through these.
 - **Fixed separation.** One axis distance (1.65 nm) for every chemistry. A
   succinylated surface is bulkier and more hydrated; the equilibrium distance
   is not computed.
-- **Energies, not free energies of binding.** Minimum and Boltzmann average
-  over two facing angles are the only entropy in it. A -24 kT pair minimum is
-  not a statement that pairs form at a given concentration.
+- **Energies, not free energies of binding** (S1, S2 and the composition
+  scan). Minimum and Boltzmann average over two facing angles are the only
+  entropy in them. A -24 kT pair minimum is not a statement that pairs form
+  at a given concentration. The pair-interaction section integrates the same
+  energy into a second virial coefficient, which weighs attraction against
+  excluded volume, but still for aligned rods and without the entropy a
+  pair loses on binding.
+- **Solubility by a net-charge threshold** (an earlier version of the
+  composition scan) was wrong in kind and is gone; see the pair-interaction
+  section. With the pair measure the model reproduces acid solubility and
+  neutral-pH assembly of native collagen, but not its solubility in the cold
+  at neutral pH nor the solubility of the modified material at pH 7.
 - **No polarity selection** (see the native control).
 - **Zero stagger is excluded.** Like-on-like register is strongly favoured by
   the centred hydrophobic product and strongly disfavoured by charge; the
@@ -989,6 +1615,11 @@ modcoll/cli_stagger.py     S2
 modcoll/cli_composition.py composition scan: forward map, inverse problem,
                            sensitivity, assays, stagger scan across compositions
 modcoll/composition_figures.py  its figures
+modcoll/solubility.py      second virial coefficient of a pair over stagger, facing angles
+                           and separation; temperature dependence; the material in water
+modcoll/cli_solubility.py  native control, modified map, variants, inverse problem with the
+                           pair criterion, dilution series
+modcoll/solubility_figures.py  its figures
 modcoll/cli_common.py      CSV/JSON writers, figure style
 tests/modcoll/             pytest; oracles are closed forms, published numbers,
                            hand-built molecules and the brute-force pair sum
@@ -1023,3 +1654,24 @@ results/modcoll/           committed summaries and figures
 - Miyata, Rubin, Stenzel, Dunn (1979) US Patent 4,164,559
 - Miyata, Dunn (1988) US Patent 4,748,152
 - Zhu, Wang, Ferracci, Zheng, Cho, Lee (2019) Sci. Rep. 9:6863
+- McMillan, Mayer (1945) J. Chem. Phys. 13:276
+- George, Wilson (1994) Acta Crystallogr. D 50:361
+- Neal, Asthagiri, Lenhoff (1998) Biophys. J. 75:2469
+- Onsager (1949) Ann. N. Y. Acad. Sci. 51:627
+- Malmberg, Maryott (1956) J. Res. Natl. Bur. Stand. 56:1
+- Gross, Highberger, Schmitt (1955) Proc. Natl. Acad. Sci. USA 41:1
+- Gross, Kirk (1958) J. Biol. Chem. 233:355
+- Wood, Keech (1960) Biochem. J. 75:588
+- Williams, Gelman, Poppke, Piez (1978) J. Biol. Chem. 253:6578
+- Miller, Rhodes (1982) Methods Enzymol. 82:33
+- Kadler, Hojima, Prockop (1987) J. Biol. Chem. 262:15696
+- Kadler, Holmes, Trotter, Chapman (1996) Biochem. J. 316:1
+- Suzuki, Someki, Adachi, Irie, Hattori (1999) J. Biochem. 126:54
+- Tanford (1962) Adv. Protein Chem. 17:69
+- Gross (1958) J. Exp. Med. 108:215
+- Leikin, Rau, Parsegian (1994) Proc. Natl. Acad. Sci. USA 91:276
+- Leikin, Rau, Parsegian (1995) Nat. Struct. Biol. 2:205
+- Morozova, Muthukumar (2018) J. Chem. Phys., doi:10.1063/1.5036526
+- Maher, White, Glattauer, Yue, Hughes, Ramshaw, Wallace (2022) Polymers 14:1775
+- Wang, Zhou, Liu, Sun, Sun (2022) Gels 9:17
+- Hattori, Adachi, Ebihara, Shirai, Someki, Irie (1999) J. Biochem., doi:10.1093/oxfordjournals.jbchem.a022336

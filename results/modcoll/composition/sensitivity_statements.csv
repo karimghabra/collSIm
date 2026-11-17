@@ -13,7 +13,6 @@ band,statement,quantity,n_variants,base,true_in_variants,same_in_all_variants,mi
 0.1,least succinylation without deamidation,f_succ_min_no_deamidation,108,0.95,,,0.375,0.975,25
 0.1,least total acylation (succinyl + acetyl) of any composition,f_acyl_min,108,0.5,,,0.325,0.625,0
 0.1,smallest net charge magnitude at pH 7 of any composition (e),abs_net_charge_pH7_min,108,141.167,,,103.832,162.3,0
-0.1,compositions in the band excluded by the pH 7 solubility proxy,n_excluded_as_insoluble,108,0,,,0,0,0
 0.1,share of all grid compositions that are consistent,share_of_grid,108,0.253858,,,0.154306,0.321,0
 0.2,succinylation alone reaches the band,pure_succinylation_reaches,108,True,108,True,,,
 0.2,acetylation alone reaches the band,pure_acetylation_reaches,108,False,0,True,,,
@@ -29,7 +28,6 @@ band,statement,quantity,n_variants,base,true_in_variants,same_in_all_variants,mi
 0.2,least succinylation without deamidation,f_succ_min_no_deamidation,108,0.575,,,0.15,0.925,0
 0.2,least total acylation (succinyl + acetyl) of any composition,f_acyl_min,108,0.375,,,0.2,0.475,0
 0.2,smallest net charge magnitude at pH 7 of any composition (e),abs_net_charge_pH7_min,108,115.726,,,85.408,131.728,0
-0.2,compositions in the band excluded by the pH 7 solubility proxy,n_excluded_as_insoluble,108,0,,,0,0,0
 0.2,share of all grid compositions that are consistent,share_of_grid,108,0.44544,,,0.316327,0.581024,0
 0.3,succinylation alone reaches the band,pure_succinylation_reaches,108,True,108,True,,,
 0.3,acetylation alone reaches the band,pure_acetylation_reaches,108,False,3,False,,,
@@ -45,5 +43,4 @@ band,statement,quantity,n_variants,base,true_in_variants,same_in_all_variants,mi
 0.3,least succinylation without deamidation,f_succ_min_no_deamidation,108,0.3,,,0,0.525,0
 0.3,least total acylation (succinyl + acetyl) of any composition,f_acyl_min,108,0.25,,,0.1,0.325,0
 0.3,smallest net charge magnitude at pH 7 of any composition (e),abs_net_charge_pH7_min,108,94.7397,,,71.0789,108.899,0
-0.3,compositions in the band excluded by the pH 7 solubility proxy,n_excluded_as_insoluble,108,0,,,0,0,0
 0.3,share of all grid compositions that are consistent,share_of_grid,108,0.594132,,,0.484348,0.746585,0

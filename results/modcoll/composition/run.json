@@ -22,9 +22,7 @@
       "f_deam_min": 0.0,
       "f_succ_max": 1.0,
       "f_succ_min": 0.0,
-      "n_excluded_as_insoluble": 0,
       "n_grid_points": 36162,
-      "n_in_band": 9180,
       "n_points": 9180,
       "net_charge_pH7_max": -141.16742033677338,
       "pI_high": 4.3,
@@ -45,7 +43,6 @@
       "pure_succinylation_lowest_pI": 4.288085394157595,
       "pure_succinylation_reaches": true,
       "share_of_grid": 0.2538576406172225,
-      "soluble_threshold_e": 69.24131126957502,
       "without_succinylation_f_acet_min": 0.7,
       "without_succinylation_f_deam_min": 0.55,
       "without_succinylation_reached": true
@@ -61,9 +58,7 @@
       "f_deam_min": 0.0,
       "f_succ_max": 1.0,
       "f_succ_min": 0.0,
-      "n_excluded_as_insoluble": 0,
       "n_grid_points": 36162,
-      "n_in_band": 16108,
       "n_points": 16108,
       "net_charge_pH7_max": -115.72632429424313,
       "pI_high": 4.4,
@@ -84,7 +79,6 @@
       "pure_succinylation_lowest_pI": 4.288085394157595,
       "pure_succinylation_reaches": true,
       "share_of_grid": 0.44543996460372765,
-      "soluble_threshold_e": 69.24131126957502,
       "without_succinylation_f_acet_min": 0.525,
       "without_succinylation_f_deam_min": 0.35,
       "without_succinylation_reached": true
@@ -100,9 +94,7 @@
       "f_deam_min": 0.0,
       "f_succ_max": 1.0,
       "f_succ_min": 0.0,
-      "n_excluded_as_insoluble": 0,
       "n_grid_points": 36162,
-      "n_in_band": 21485,
       "n_points": 21485,
       "net_charge_pH7_max": -94.73965155144735,
       "pI_high": 4.5,
@@ -123,7 +115,6 @@
       "pure_succinylation_lowest_pI": 4.288085394157595,
       "pure_succinylation_reaches": true,
       "share_of_grid": 0.5941319617277805,
-      "soluble_threshold_e": 69.24131126957502,
       "without_succinylation_f_acet_min": 0.35,
       "without_succinylation_f_deam_min": 0.18,
       "without_succinylation_reached": true
@@ -188,10 +179,6 @@
     ]
   },
   "seed": 20261112,
-  "soluble_at_pH7": {
-    "factor_of_native_charge": 2.0,
-    "threshold_e": 69.24131126957502
-  },
   "stages": [
     "map",
     "inverse",

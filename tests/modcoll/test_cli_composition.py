@@ -125,7 +125,7 @@ def test_command_writes_its_tables(scan):
     code, out = scan
     assert code == 0
     for name in ("forward_map.csv", "pure_chemistries.csv", "region_summary.csv",
-                 "consistent_region.csv", "min_succinylation.csv", "solubility_threshold.csv",
+                 "consistent_region.csv", "min_succinylation.csv",
                  "sensitivity.csv", "sensitivity_statements.csv",
                  "sensitivity_min_succinylation.csv", "assays.csv", "assay_ranking.csv",
                  "assay_sets.csv", "assays_representatives.csv", "titration_curves.csv",
@@ -191,9 +191,9 @@ def test_inverse_problem_tables(scan):
         assert r["pure_acetylation_reaches"] == "False"       # stops at 4.64
         assert r["pure_deamidation_reaches"] == "False"       # stops at 4.74
         assert float(r["pure_acetylation_lowest_pI"]) == pytest.approx(4.64, abs=0.005)
-        assert int(r["n_excluded_as_insoluble"]) == 0
-        # every consistent composition is far more charged at pH 7 than native
-        assert float(r["abs_net_charge_pH7_min"]) > float(r["soluble_threshold_e"]) > 60
+        # the band alone defines the set; the pH 7 charge is only described
+        assert "n_excluded_as_insoluble" not in r
+        assert float(r["abs_net_charge_pH7_min"]) > 60
     # complete succinylation gives 4.288: inside +-0.1 (4.1 ... 4.3)
     assert summary[0.1]["pure_succinylation_reaches"] == "True"
     assert float(summary[0.3]["pure_succinylation_f_reaching_band"]) < float(
@@ -207,13 +207,6 @@ def test_inverse_problem_tables(scan):
             and r["reached"] == "True"]
     values = [float(r["f_succ_min"]) for r in sorted(rows, key=lambda r: float(r["f_deam_cap"]))]
     assert values == sorted(values, reverse=True) and values[-1] == 0.0
-    # raising the solubility threshold can only remove compositions
-    sol = [r for r in read_csv(out / "solubility_threshold.csv") if float(r["band"]) == 0.3]
-    sol.sort(key=lambda r: float(r["soluble_threshold_e"]))
-    kept = [int(r["n_consistent"]) for r in sol]
-    assert kept == sorted(kept, reverse=True) and kept[0] == n[2] and kept[-1] < n[2]
-    assert sum(r["is_default"] == "True" for r in sol) == 1
-
 
 def test_sensitivity_tables(scan):
     _, out = scan

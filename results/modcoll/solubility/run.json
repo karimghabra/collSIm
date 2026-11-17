@@ -1,0 +1,223 @@
+{
+  "B2_hc_nm3": 2483.4905728470567,
+  "D_nm": 66.88326336721869,
+  "bench_criteria": [
+    {
+      "expected": "soluble",
+      "ionic_mM": 1.0,
+      "name": "deionized water",
+      "pH": 3.5
+    },
+    {
+      "expected": "soluble",
+      "ionic_mM": 10.0,
+      "name": "pH 7, dilute buffer",
+      "pH": 7.0
+    },
+    {
+      "expected": "soluble",
+      "ionic_mM": 150.0,
+      "name": "PBS",
+      "pH": 7.4
+    },
+    {
+      "expected": "precipitates",
+      "ionic_mM": 10.0,
+      "name": "sodium acetate pH 4.2",
+      "pH": 4.2
+    },
+    {
+      "expected": "precipitates",
+      "ionic_mM": 50.0,
+      "name": "acetate pH 4.2, 50 mM",
+      "pH": 4.2
+    }
+  ],
+  "helix_length_nm": 290.3653265680308,
+  "inverse": [
+    {
+      "compositions": 14,
+      "excluded by the pair criteria": 14,
+      "match [PBS]": 0,
+      "match [acetate pH 4.2, 50 mM]": 14,
+      "match [deionized water]": 14,
+      "match [pH 7, dilute buffer]": 1,
+      "match [sodium acetate pH 4.2]": 14,
+      "match all pair criteria": 0,
+      "pI_band": "4.2 +- 0.1",
+      "variant": "base"
+    },
+    {
+      "compositions": 23,
+      "excluded by the pair criteria": 23,
+      "match [PBS]": 0,
+      "match [acetate pH 4.2, 50 mM]": 23,
+      "match [deionized water]": 23,
+      "match [pH 7, dilute buffer]": 3,
+      "match [sodium acetate pH 4.2]": 23,
+      "match all pair criteria": 0,
+      "pI_band": "4.2 +- 0.2",
+      "variant": "base"
+    },
+    {
+      "compositions": 33,
+      "excluded by the pair criteria": 33,
+      "match [PBS]": 0,
+      "match [acetate pH 4.2, 50 mM]": 33,
+      "match [deionized water]": 33,
+      "match [pH 7, dilute buffer]": 3,
+      "match [sodium acetate pH 4.2]": 33,
+      "match all pair criteria": 0,
+      "pI_band": "4.2 +- 0.3",
+      "variant": "base"
+    },
+    {
+      "compositions": 33,
+      "excluded by the pair criteria": 33,
+      "match [PBS]": 0,
+      "match [acetate pH 4.2, 50 mM]": 33,
+      "match [deionized water]": 33,
+      "match [pH 7, dilute buffer]": 3,
+      "match [sodium acetate pH 4.2]": 33,
+      "match all pair criteria": 0,
+      "pI_band": "any",
+      "variant": "base"
+    },
+    {
+      "compositions": 14,
+      "excluded by the pair criteria": 13,
+      "match [PBS]": 13,
+      "match [acetate pH 4.2, 50 mM]": 14,
+      "match [deionized water]": 14,
+      "match [pH 7, dilute buffer]": 1,
+      "match [sodium acetate pH 4.2]": 14,
+      "match all pair criteria": 1,
+      "pI_band": "4.2 +- 0.1",
+      "variant": "contact 1.80 nm, soft core 0.5 nm"
+    },
+    {
+      "compositions": 23,
+      "excluded by the pair criteria": 18,
+      "match [PBS]": 18,
+      "match [acetate pH 4.2, 50 mM]": 23,
+      "match [deionized water]": 23,
+      "match [pH 7, dilute buffer]": 5,
+      "match [sodium acetate pH 4.2]": 23,
+      "match all pair criteria": 5,
+      "pI_band": "4.2 +- 0.2",
+      "variant": "contact 1.80 nm, soft core 0.5 nm"
+    },
+    {
+      "compositions": 33,
+      "excluded by the pair criteria": 28,
+      "match [PBS]": 18,
+      "match [acetate pH 4.2, 50 mM]": 33,
+      "match [deionized water]": 33,
+      "match [pH 7, dilute buffer]": 5,
+      "match [sodium acetate pH 4.2]": 33,
+      "match all pair criteria": 5,
+      "pI_band": "4.2 +- 0.3",
+      "variant": "contact 1.80 nm, soft core 0.5 nm"
+    },
+    {
+      "compositions": 33,
+      "excluded by the pair criteria": 28,
+      "match [PBS]": 18,
+      "match [acetate pH 4.2, 50 mM]": 33,
+      "match [deionized water]": 33,
+      "match [pH 7, dilute buffer]": 5,
+      "match [sodium acetate pH 4.2]": 33,
+      "match all pair criteria": 5,
+      "pI_band": "any",
+      "variant": "contact 1.80 nm, soft core 0.5 nm"
+    }
+  ],
+  "native_pI": 9.841738937718599,
+  "pairs": 3,
+  "seed": 20261112,
+  "settings": {
+    "contact_nm": 1.65,
+    "core_nm": 0.35,
+    "ds_nm": 0.2,
+    "eps_hydrophobic": 0.05,
+    "far_offsets_nm": [
+      3.6,
+      4.32,
+      5.184,
+      6.221,
+      7.465,
+      8.958,
+      10.75,
+      12.899,
+      15.479,
+      18.575,
+      22.29,
+      26.748,
+      32.098,
+      38.518,
+      46.221,
+      55.465,
+      66.558,
+      79.87,
+      95.844,
+      115.013,
+      138.015,
+      165.618,
+      198.742,
+      238.491,
+      286.189,
+      343.426,
+      412.112
+    ],
+    "hydrophobic_sigma_nm": 0.5,
+    "in_register_exclusion_nm": 5.0,
+    "lag_reach_debye": 12.0,
+    "min_reach_nm": 3.0,
+    "n_phi": 24,
+    "n_shell_charge": 2,
+    "n_shell_hydro": 4,
+    "near_offsets_nm": [
+      0.0,
+      0.025,
+      0.05,
+      0.075,
+      0.1,
+      0.125,
+      0.15,
+      0.175,
+      0.2,
+      0.225,
+      0.25,
+      0.275,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0,
+      1.25,
+      1.5,
+      1.75,
+      2.0,
+      2.25,
+      2.5,
+      2.75,
+      3.0
+    ],
+    "orientations": [
+      "parallel",
+      "antiparallel"
+    ],
+    "position": "centroid",
+    "reach_debye": 12.0
+  },
+  "stages": [
+    "native",
+    "variants",
+    "modified",
+    "inverse",
+    "water"
+  ]
+}

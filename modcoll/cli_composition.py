@@ -12,8 +12,9 @@ map          tabulates the isoelectric point (of the sample and of the single
              molecules), the net charge at pH 4.2 and 7.0 and the charge per
              unit length, each with a standard error;
 inverse      finds the compositions whose isoelectric point is the target
-             (4.2) within +-0.1, +-0.2 and +-0.3 and that are charged enough at
-             pH 7 to count as soluble there;
+             (4.2) within +-0.1, +-0.2 and +-0.3 (solubility at pH 7 is not
+             judged here: it needs the pair interaction, which
+             ``modcoll.cli_solubility`` computes for a subset of these);
 sensitivity  repeats the inverse problem for every combination of the
              succinyl, Asp and Glu pKa ranges, the two chain-end models and the
              human sequence with or without the four alpha2 histidines that
@@ -29,8 +30,7 @@ Outputs (in --outdir, default results/modcoll/composition):
 
 map          forward_map.csv (the coarse grid and the liming slice),
              pure_chemistries.csv
-inverse      region_summary.csv, consistent_region.csv, min_succinylation.csv,
-             solubility_threshold.csv
+inverse      region_summary.csv, consistent_region.csv, min_succinylation.csv
 sensitivity  sensitivity.csv, sensitivity_statements.csv,
              sensitivity_min_succinylation.csv
 assays       assays.csv, assay_ranking.csv, assay_sets.csv,
@@ -69,7 +69,6 @@ SPECIES = ("human", "bovine_porcine")
 BASE_VARIANT = {"succinyl_pKa": 4.5, "asp_pKa": 3.9, "glu_pKa": 4.3,
                 "chain_ends": "mature", "species": "human"}
 F_DEAM_CAPS = (0.0, 0.1, co.LIMING_F_DEAM, 0.25, 0.5, 0.75, 1.0)
-SOLUBLE_THRESHOLDS_E = (0.0, 50.0, 75.0, 100.0, 150.0, 200.0)
 TITRATION_PH = np.round(np.arange(2.0, 12.01, 0.1), 2)
 S2_REFERENCE = (0.9, 0.0, 0.0)   # 90 % succinylation, the case S2 calls realistic
 
@@ -163,20 +162,18 @@ def smallest_band(pI, target: float, bands) -> np.ndarray:
     return out
 
 
-def solve_inverse(points, pI, q7, target: float, bands, threshold_e: float,
-                  caps=F_DEAM_CAPS):
-    """Consistent set for each band: region summary rows, the rows of the
-    minimum-succinylation table and the boolean masks {band: mask}."""
+def solve_inverse(points, pI, q7, target: float, bands, caps=F_DEAM_CAPS):
+    """Compositions whose isoelectric point lies in each band: region summary
+    rows, the rows of the minimum-succinylation table and the boolean masks
+    {band: mask}. ``q7`` (mean net charge at pH 7) is only described, not used
+    as a criterion: a net charge says nothing about solubility by itself (see
+    ``modcoll.solubility``)."""
     summary, min_succ, masks = [], [], {}
-    soluble = co.soluble_at(q7, threshold_e)
     for band in bands:
-        hit = co.in_band(pI, target, band)
-        ok = hit & soluble
+        ok = co.in_band(pI, target, band)
         masks[band] = ok
         row = {"band": band, "pI_low": target - band, "pI_high": target + band,
-               "soluble_threshold_e": threshold_e,
-               "n_grid_points": len(pI), "n_in_band": int(hit.sum()),
-               "n_excluded_as_insoluble": int((hit & ~soluble).sum())}
+               "n_grid_points": len(pI)}
         row.update(co.region_summary(points, pI, ok))
         row["share_of_grid"] = row["n_points"] / len(pI)
         for which, name in enumerate(("succinylation", "acetylation", "deamidation")):
@@ -243,8 +240,7 @@ def min_succinylation_curve(points, ok):
     return caps, out
 
 
-def sensitivity(points, sums_by_ends, native_by_ends, molecules, target, bands,
-                soluble_factor):
+def sensitivity(points, sums_by_ends, native_by_ends, molecules, target, bands):
     """The inverse problem for every variant.
 
     Returns (rows, curve rows): one row per variant and band, and for each
@@ -260,7 +256,6 @@ def sensitivity(points, sums_by_ends, native_by_ends, molecules, target, bands,
         q7 = co.net_charge_from_counts(sums, 7.0, pka) / molecules
         q7_native = float(co.net_charge_from_counts(nat, 7.0, pka))
         summary, min_succ, masks = solve_inverse(points, pI, q7, target, bands,
-                                                 soluble_factor * abs(q7_native),
                                                  caps=(0.0, co.LIMING_F_DEAM, 1.0))
         for row in summary:
             by_cap = {r["f_deam_cap"]: r for r in min_succ if r["band"] == row["band"]}
@@ -274,7 +269,7 @@ def sensitivity(points, sums_by_ends, native_by_ends, molecules, target, bands,
                         "pure_deamidation_reaches", "pure_deamidation_lowest_pI",
                         "without_succinylation_reached", "without_succinylation_f_deam_min",
                         "without_succinylation_f_acet_min",
-                        "abs_net_charge_pH7_min", "n_excluded_as_insoluble"):
+                        "abs_net_charge_pH7_min"):
                 out[key] = row[key]
             for cap, name in ((0.0, "no_deamidation"), (co.LIMING_F_DEAM, "liming_or_less")):
                 r = by_cap[cap]
@@ -324,8 +319,6 @@ STATEMENTS = (
     ("f_acyl_min", "number", "least total acylation (succinyl + acetyl) of any composition"),
     ("abs_net_charge_pH7_min", "number",
      "smallest net charge magnitude at pH 7 of any composition (e)"),
-    ("n_excluded_as_insoluble", "number",
-     "compositions in the band excluded by the pH 7 solubility proxy"),
     ("share_of_grid", "number", "share of all grid compositions that are consistent"),
 )
 
@@ -698,9 +691,6 @@ def build_parser() -> argparse.ArgumentParser:
                    help="the isoelectric point to match")
     p.add_argument("--bands", type=cc.float_list, default=[0.1, 0.2, 0.3],
                    help="half-widths of the tolerance bands on the isoelectric point")
-    p.add_argument("--soluble-factor", type=float, default=2.0,
-                   help="soluble at pH 7 = net charge magnitude at least this many times "
-                        "that of the unmodified molecule at pH 7")
     p.add_argument("--weights", choices=("uniform", "crosslink_sites", "ion_pair"),
                    default="uniform", help="site reactivity model")
     p.add_argument("--stages", default=",".join(STAGES))
@@ -770,7 +760,6 @@ def run(argv=None) -> int:
     tag = f"pH{target:g}"
     liming = np.isclose(points[:, 2], co.LIMING_F_DEAM)
     q7_native = float(co.net_charge_from_counts(nat, 7.0, base_pka))
-    threshold = args.soluble_factor * abs(q7_native)
 
     map_rows = []
     for i, s in enumerate(stats):
@@ -810,8 +799,6 @@ def run(argv=None) -> int:
                    "pI": float(co.isoelectric_point_from_counts(nat, base_pka)),
                    f"net_charge_{tag}": float(co.net_charge_from_counts(nat, target, base_pka)),
                    "net_charge_pH7": q7_native},
-        "soluble_at_pH7": {"factor_of_native_charge": args.soluble_factor,
-                           "threshold_e": threshold},
         "lowest_pI_on_grid": {"pI": float(np.nanmin(pI)),
                               **_composition_row(points[int(np.nanargmin(pI))])},
         "largest_pI_standard_error_within_widest_band": float(max(
@@ -822,7 +809,7 @@ def run(argv=None) -> int:
     # ---- inverse ------------------------------------------------------------
     masks, summary, min_succ = {}, [], []
     if any(s in stages for s in ("inverse", "assays", "stagger")):
-        summary, min_succ, masks = solve_inverse(points, pI, q7, target, bands, threshold)
+        summary, min_succ, masks = solve_inverse(points, pI, q7, target, bands)
         cc.write_csv(outdir / "region_summary.csv", summary)
         cc.write_csv(outdir / "min_succinylation.csv", min_succ)
         widest = masks[bands[-1]]
@@ -845,15 +832,6 @@ def run(argv=None) -> int:
         cc.write_csv(outdir / "consistent_region.csv",
                      [r for r, keep in zip(region_rows, coarse[widest]) if keep])
         cc.write_csv(raw / "consistent_region_fine.csv", region_rows)
-        sol_rows = []
-        for thr in sorted(set(SOLUBLE_THRESHOLDS_E) | {round(threshold, 3)}):
-            for band in bands:
-                hit = co.in_band(pI, target, band)
-                sol_rows.append({"band": band, "soluble_threshold_e": thr,
-                                 "is_default": bool(np.isclose(thr, round(threshold, 3))),
-                                 "n_in_band": int(hit.sum()),
-                                 "n_consistent": int((hit & co.soluble_at(q7, thr)).sum())})
-        cc.write_csv(outdir / "solubility_threshold.csv", sol_rows)
         run_info["inverse"] = {f"band_{b:g}": {k: v for k, v in row.items()}
                                for b, row in zip(bands, summary)}
         print("inverse problem, base parameters:")
@@ -870,7 +848,7 @@ def run(argv=None) -> int:
     sens_rows, statement_rows, sens_curves = [], [], []
     if "sensitivity" in stages:
         sens_rows, sens_curves = sensitivity(points, sums, native_counts, args.molecules,
-                                             target, bands, args.soluble_factor)
+                                             target, bands)
         statement_rows = statements(sens_rows, bands)
         cc.write_csv(outdir / "sensitivity.csv", sens_rows)
         cc.write_csv(outdir / "sensitivity_statements.csv", statement_rows)

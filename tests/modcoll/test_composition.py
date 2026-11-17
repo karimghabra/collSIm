@@ -397,7 +397,6 @@ def test_bands_are_closed_and_nested():
     assert n == [3, 5, 7]
     for narrow, wide in ((0.1, 0.2), (0.2, 0.3)):
         assert np.all(co.in_band(pI, 4.2, wide)[co.in_band(pI, 4.2, narrow)])
-    assert co.soluble_at([-120.0, 30.0, 70.0], 66.0).tolist() == [True, False, True]
 
 
 def test_region_summary_and_minimum_succinylation_on_a_synthetic_map():

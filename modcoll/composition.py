@@ -390,13 +390,6 @@ def in_band(pI, target: float, half_width: float) -> np.ndarray:
     return np.abs(np.asarray(pI, dtype=float) - target) <= half_width + 1e-9
 
 
-def soluble_at(net_charge, threshold_e: float) -> np.ndarray:
-    """Charge proxy for "soluble": the molecule carries a net charge of at
-    least ``threshold_e`` in magnitude. The model has no solubility
-    calculation; see the model document for what this stands in for."""
-    return np.abs(np.asarray(net_charge, dtype=float)) >= threshold_e
-
-
 def pure_chemistry(points) -> np.ndarray:
     """Label of each composition row: "succinylation", "acetylation" or
     "deamidation" if only that fraction is non-zero, "native" if none is,
