@@ -46,6 +46,14 @@ window native-05D 12
 window native-05D 13
 window native-05D 14
 contact native-05D 1.300 4.0
+# contact region extended to 12 ns (native-05D at 4 ns: halves differ by up to 3.2 kT)
+contact native-05D 1.300 12.0
+window native-05D 0 12
+window native-05D 1 12
+window native-05D 2 12
+window native-05D 3 12
+window native-05D 4 12
+window native-05D 5 12
 pull succ-1D
 pull succ-05D
 window succ-1D 0
@@ -88,6 +96,14 @@ window succ-05D 12
 window succ-05D 13
 window succ-05D 14
 contact succ-05D 1.300 4.0
+# contact region extended to 12 ns (native-05D at 4 ns: halves differ by up to 3.2 kT)
+contact succ-05D 1.300 12.0
+window succ-05D 0 12
+window succ-05D 1 12
+window succ-05D 2 12
+window succ-05D 3 12
+window succ-05D 4 12
+window succ-05D 5 12
 pull succ-1D-Ca
 pull succ-1D-SO4
 window succ-1D-Ca 0
