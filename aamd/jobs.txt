@@ -160,4 +160,5 @@ pull succ-1D-Mg
 # contact runs: 20 ns at the minimum of the matching monovalent PMF (native-1D: 1.31 nm)
 contact native-1D-Ca 1.300 20.0
 contact native-1D-Mg 1.300 20.0
-# succ-1D-Mg: appended once the succ-1D minimum is known
+# succ-1D-Mg at the succ-1D minimum (1.39 nm)
+contact succ-1D-Mg 1.400 20.0
