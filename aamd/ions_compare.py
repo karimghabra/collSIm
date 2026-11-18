@@ -1,7 +1,7 @@
 """Ion bridges: all-atom counts against the modcoll ion sampler at the same
 geometry.
 
-``python -m aamd.ions_compare SYSTEM JOBDIR [--frames N] [--sweeps N]``
+``python -m aamd.ions_compare SYSTEM RUN [--frames N] [--sweeps N]``  (RUN: w07, c1.300 or a path)
 
 1. All-atom: every saved frame of the job (solute + ions, 10 ps apart) is
    analysed with ``aamd.bridges`` (modcoll's contact and bridge definitions);
@@ -150,6 +150,8 @@ def compare(name, jobdir, n_frames=8, sweeps=6000):
     from .predict import ionic_strength
 
     rng = np.random.default_rng(1)
+    if not Path(jobdir).exists():                  # a run name such as w07 or c1.300
+        jobdir = build.WORK / name / jobdir
     traj = load_job(jobdir)
     md = md_counts(traj, rng)
     sp = [s for s in md["species"]]
