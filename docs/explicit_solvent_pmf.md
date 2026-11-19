@@ -8,7 +8,223 @@ here is set against the prediction of `modcoll` (the site model of
 `docs/modified_collagen_sites.md` and the ion model of
 `docs/modified_collagen_ions.md`) at the same geometry, with the same charges.
 
-<!-- RESULTS -->
+## Results
+
+All free energies in kT at 298 K, per 30-residue overlap (8.6 nm of each
+helix), zero at 2.55-2.80 nm. Errors are block standard errors (4 blocks);
+"halves" is the difference between the PMFs from the first and the second half
+of production at the minimum. Numbers: `aamd/results/comparison.md` and `.json`;
+profiles: `aamd/results/fig_pmf_*.png`, `fig_summary.png`.
+
+### Measured against predicted
+
+| system | measured minimum | at d (nm) | halves | coarse at that d | coarse el / hy | residual |
+|---|---|---|---|---|---|---|
+| native-1D | -7.5 +- 0.6 | 1.31 | 0.5 | -5.7 | -1.0 / -4.7 | -1.8 |
+| native-05D | -7.3 +- 1.1 | 1.27 | 0.5 | -0.2 | +0.1 / -0.2 | -7.2 |
+| succ-1D | -9.3 +- 0.5 | 1.39 | 1.3 | -2.5 | +1.1 / -4.0 | -6.8 |
+| succ-05D | -8.9 +- 1.5 | 1.33 | 0.0 | +1.0 | +1.1 / -0.2 | -9.9 |
+| succ-1D-Ca | -8.6 +- 1.6 | 1.35 | **4.6** | -3.1 | +0.9 / -4.3 | -5.5 |
+| succ-1D-SO4 | -13.0 +- 2.0 | 1.37 | 0.3 | -2.9 | +0.9 / -4.1 | -10.1 |
+
+"Coarse" is `modcoll`'s site-model pair free energy with both helices free to
+rotate (`aamd.coarse`, same segments, same protonation, same monovalent ionic
+strength), read at the measured minimum; its own minimum lies at the inner edge
+of its range (1.20 nm). WHAM agrees with MBAR to 0.25 kT or better at every
+minimum.
+
+| difference | measured | coarse |
+|---|---|---|
+| native: G(1D) - G(0.5D) | -0.2 +- 1.2 | -5.5 |
+| succinylated: G(1D) - G(0.5D) | -0.4 +- 1.6 | -3.4 |
+| 1D: G(succinylated, pH 4.2) - G(native, pH 7.4) | -1.8 +- 0.8 | +3.2 |
+| succ-1D: G(Ca2+) - G(monovalent) | +0.7 +- 1.7 (unconverged) | -0.6 (screening only) |
+| succ-1D: G(sulfate) - G(monovalent) | -3.7 +- 2.0 | -0.4 (screening only) |
+
+### Where the coarse model is right, wrong, or untestable
+
+- **Right: two helices attract at contact, by several kT per 30 residues, and
+  native 1 D is about as deep as predicted** (-7.5 against -5.7).
+- **Wrong: stagger selectivity.** The 1 D and 0.5 D pairs bind equally
+  (-0.2 +- 1.2 native, -0.4 +- 1.6 succinylated), where the coarse model puts
+  the whole of its attraction in 1 D. The coarse 1 D depth comes almost
+  entirely from the hydrophobic term (-4.7 of -5.7), and that term has nothing
+  to work with at 0.5 D (overlap -3 KD^2 against +66). What holds the 0.5 D pair
+  is absent from the model.
+- **Wrong sign: succinylation at pH 4.2 strengthens the 1 D pair** by
+  1.8 +- 0.8 kT; the coarse model weakens it by 3.2 kT (the electrostatic part
+  turns repulsive: net charges -6/0 against -5/+5, and the Lys hydrophobic
+  weights are kept for the succinylated residues). At pH 4.2, 8 of the 11
+  succinyl groups, 6 of 11 Glu and 2 of 6 Asp are protonated in these
+  segments; the most frequent contacts at the succinylated interface are
+  protonated succinyl with Glu, Hyp and Gln (each in contact in 95-97 % of frames,
+  `aamd/results/contacts_succ-1D.json`). A neutral carboxylic acid next to a
+  carboxylate or an amide is a hydrogen-bond pair; the coarse model sees only a
+  smaller mean charge.
+- **Range: about right; contact distance: wrong.** The measured attraction
+  sets in at about 2.0 nm (0.5 nm surface separation for the model's 0.75 nm
+  radius; beyond it every PMF is within 1.5 kT of zero) and is steepest
+  between 1.4 and 1.7 nm. The coarse native 1 D profile has a similar range
+  (-0.9 kT at 2.0 nm). But the minima lie at 1.27-1.39 nm, 0.1-0.2 nm inside
+  the sum of the model's nominal radii (the side chains interdigitate), and at
+  the model's contact distance of 1.65 nm the measured PMFs are -2 to -5 kT,
+  25-60 % of their depth.
+- **Untestable here: Ca2+.** The succ-1D-Ca PMF has not converged (the halves
+  differ by 4.6 kT at the minimum after extension of the four slowest runs to
+  20 ns; the second half is the deeper), so neither the sign nor the size of
+  the Ca2+ effect is measured. Its bridges are (below).
+- **Missing: sulfate.** 50 mM Na2SO4 deepens the succinylated 1 D pair by
+  3.7 +- 2.0 kT (halves agree to 0.3 kT; the block error is large because the
+  1.3-1.5 nm windows have inefficiencies near 1 ns). The coarse model changes
+  only the screening (-0.4 kT), and neither model forms a sulfate bridge in
+  these geometries (below), so the effect is not a bridge in modcoll's sense.
+
+### The hydrophobic term
+
+Fitting the hydrophobic strength alone to the four monovalent PMFs
+(dG - E_el = -eps_h H) gives eps_h = 0.13 +- 0.09 kT/KD^2, against the
+model's assumed 0.05. That number only rescales the 1 D depth: with a
+register-independent constant added (dG - E_el = -eps_h H + c, weighted by the
+block errors) the fit gives **eps_h = 0.00 +- 0.06 kT/KD^2 and c = -9 +- 3 kT**
+(chi^2 27 on 2 degrees of freedom; most of the scatter is the uniform
+2-3 kT by which the succinylated pairs are deeper than the native ones). The
+stagger contrast leaves no room for an eps_h large enough to make up the
+depth; the assumed 0.05 is at the edge of one standard error, so a
+Kyte-Doolittle term of that size is allowed but not required by these data.
+
+The contact composition says the same from the other side
+(`aamd.contacts`, heavy atoms within 0.45 nm, `aamd/results/contacts_*.json`):
+
+| system | residue pairs in contact per frame | C-C / C-polar / polar-polar atom contacts | Spearman rho(frequency, h_i h_j) | contacts on pairs the coarse model calls attractive |
+|---|---|---|---|---|
+| native-1D | 25.8 | 0.40 / 0.46 / 0.15 | 0.20 | 66 % |
+| native-05D | 21.1 | 0.34 / 0.48 / 0.18 | 0.10 | 64 % |
+| succ-1D | 27.9 | 0.28 / 0.52 / 0.20 | 0.06 | 59 % |
+| succ-05D | 21.8 | 0.32 / 0.50 / 0.19 | -0.02 | 60 % |
+| succ-1D-Ca | 31.5 | 0.30 / 0.50 / 0.20 | 0.01 | 62 % |
+| succ-1D-SO4 | 27.1 | 0.33 / 0.49 / 0.17 | 0.08 | 60 % |
+
+Which residue pairs touch is unrelated to the coarse hydrophobic weight
+product (rho 0.2 at most), and a third or less of the atom contacts are
+carbon-carbon. The interface is mixed: apolar, imino (Pro, Hyp), polar and
+charged residues all contribute, with 20-26 water molecules hydrogen-bonded to
+both segments at contact (water O within 0.35 nm of both). The 0.5 D pair
+makes about 20 % fewer residue contacts than the 1 D pair and still binds as
+strongly.
+
+### Ion bridges and the contact calibration
+
+`aamd.ions_compare`: all-atom bridges by modcoll's definitions, every 10 ps;
+coarse bridges from modcoll's grand-canonical sampler around the all-atom
+positions of the charged groups of eight frames per run, at the all-atom bulk
+concentration.
+
+| system, run (mean d) | ions in contact with protein (of 12) | all-atom bridges per frame (inner-outer / outer-outer) | coarse bridges per frame (inner-outer / outer-outer) |
+|---|---|---|---|
+| succ-1D-Ca, 1.3 nm (1.36) | 3.7 | 0.03 +- 0.02 (0.03 / 0.00) | 0.14 (0.03 / 0.11) |
+| succ-1D-Ca, 1.4 nm (1.35) | 4.1 | 0.34 +- 0.19 (0.00 / 0.34) | 0.42 (0.21 / 0.20) |
+| succ-1D-Ca, 1.5 nm (1.47) | 2.6 | 0.00 | 0.26 (0.14 / 0.12) |
+| succ-1D-SO4, 1.3 / 1.4 / 1.5 nm | 2.5 / 2.4 / 3.6 | 0 | 0 |
+<!-- BRIDGES -->
+
+No inner-inner bridge (an ion directly bound to a carboxylate of each helix)
+forms in either model. Ca2+ bridges are rare in the all-atom runs: at most
+one bridge in three frames, long-lived when present (hence the block error),
+and none at all in 12 ns at 1.5 nm, where the coarse sampler still predicts
+0.26. Averaged over the three Ca2+ runs the coarse sampler predicts about
+twice the all-atom count (0.27 against 0.12 per frame), and it predicts more
+inner-outer bridges (one ion inner-sphere bound to one helix, outer-sphere to
+the other) than the all-atom runs show. The all-atom numbers rest on a few
+long events, so the factor is uncertain by about as much as itself; it
+argues against making the ion-carboxylate contact stronger and is consistent
+with making it somewhat weaker. It does not support a recalibration on its own.
+
+### Short range and hydration
+
+The force between the helices was examined at sub-nanometre surface
+separation for the repulsion that osmotic-stress experiments on collagen
+attribute to hydration, and for whether the attraction is water-mediated:
+
+| system | minimum at d (surface separation) | inner wall (F 2 kT above minimum) | inner decay length | mean F at surface separation 0.5-1.0 nm |
+|---|---|---|---|---|
+| native-1D | 1.31 nm (-0.19) | 1.25 nm | 0.014 nm | +0.15 |
+| native-05D | 1.27 nm (-0.23) | 1.23 nm | - | +0.37 |
+| succ-1D | 1.39 nm (-0.11) | 1.31 nm | 0.020 nm | -0.35 |
+| succ-05D | 1.33 nm (-0.17) | 1.27 nm | 0.014 nm | -0.07 |
+| succ-1D-Ca | 1.35 nm (-0.15) | 1.27 nm | 0.030 nm | +0.77 |
+| succ-1D-SO4 | 1.37 nm (-0.13) | 1.25 nm | 0.066 nm | -0.77 |
+
+- **No hydration repulsion is visible.** Inside the minimum the free energy
+  rises over 0.02-0.07 nm, a steric wall, not an exponential with a decay
+  length of the order of a water layer. Between 0.5 and 1.0 nm surface
+  separation the PMFs are flat to within 0.8 kT, with no consistent sign, and
+  no PMF has a barrier outside its error band on the way in (succ-1D-Ca has a
+  +1.2 kT shoulder at 1.9 nm, inside two block errors, in an unconverged
+  profile).
+- **The attraction is water-mediated at contact, in the sense that water stays
+  in the interface.** The number of bridging waters rises steadily from 0 at
+  2.5 nm to 20-26 at the minimum and does not drop when the helices touch; the
+  interface is never dry. This does not separate an entropic (water-release)
+  from an enthalpic contribution; that needs the temperature dependence.
+- What the coarse model calls the contact distance (1.65 nm) is on the
+  attractive slope of every measured PMF, 3-8 kT above its minimum.
+
+### Is a modified-collagen correction needed?
+
+Yes, in the sense that the coarse model gets the sign of the succinylation
+effect wrong. The residual (measured minus coarse) is -1.8 kT for native 1 D
+and -6.8 kT for succinylated 1 D. A correction that leaves the 1 D/0.5 D
+selectivity alone would have to add about -5 kT per 30 residues to the
+succinylated pair at pH 4.2 relative to native: about -0.5 kT per succinyl
+group in these segments, or about -0.6 kT per protonated succinyl if, as the
+contacts suggest, the neutral acid carries it. A single pair of segments at a
+single pH cannot say whether the term follows protonation, acyl-chain carbon
+or both; it also cannot fix the larger problem, a register-independent
+attraction of 7-9 kT per 30 residues that the model lacks in every system.
+
+### Limits
+
+- **Two segments, one sequence window.** One 30-residue window, chosen with
+  the coarse model as the one with the largest 1 D preference; another window
+  could rank the staggers differently. Each segment is a 30-residue piece of a
+  300 nm molecule with its ends held, so twist, bending and end effects of the
+  full molecule are absent.
+- **One coordinate.** The PMF is along the inter-axial separation with the
+  axes held parallel and the stagger fixed. The free energy of rotating either
+  helix about its own axis is integrated over, but slowly: the residual
+  disagreement between halves (up to 1.3 kT in the converged profiles, 4.6 kT
+  for succ-1D-Ca) is that rotation and the interfacial side chains relaxing on
+  a 1 ns scale.
+- **Force field.** ff14SB/TIP3P, Hyp from AmberTools' amino12.lib,
+  succinyl RESP charges fitted on two backbone conformations with the side
+  chain extended, Li-Merz
+  12-6-4 Ca2+/Mg2+ with a carboxylate-specific C4. ff14SB with TIP3P has been
+  reported to overstate protein-protein attraction, so the absolute depths
+  may be too large; differences between systems (the stagger and chemistry
+  contrasts) are less exposed to that.
+- **Fixed protonation**, assigned once (the Henderson-Hasselbalch number of
+  charged groups per residue type with modcoll's pKa set, a seeded choice of
+  which ones carry the charge);
+  charge regulation at the interface (a carboxylate next to a carboxylate
+  taking up a proton, the effect the coarse model also lacks) is absent.
+- **Sampling.** Statistical inefficiencies of 0.3-1.6 ns at contact against
+  contact-region windows of 12-20 ns: 6-23 independent samples in the slowest windows. The
+  stagger and chemistry contrasts are several error bars from the coarse
+  predictions; the ion effects are not.
+
+### Next steps
+
+- Run the same contrasts at one or two more sequence windows, including one
+  the coarse model does not favour, to separate the register-independent
+  attraction from window choice.
+- Converge succ-1D-Ca (the four contact-region windows to 40 ns, or replica
+  exchange between windows) before using it to calibrate anything.
+- A temperature repeat of one monovalent PMF (e.g. at 310 K) would split the
+  contact free energy into enthalpy and entropy, which is what bears on
+  water-release (entropy-driven) assembly; not run here.
+- Add to the coarse model a register-independent contact term, and a
+  succinyl/acid term, fitted to these PMFs, and test whether the 1 D
+  preference of the full molecule survives it.
 
 ## What was simulated
 
@@ -199,17 +415,20 @@ act on: rotation of each helix about its own axis (left free, so that the
 pair can find its best register of side chains) and the rearrangement of
 interfacial side chains and water. Those seven runs are extended to 16 ns
 (job lines `window S I 16`, which continue a finished window from its last
-chunk).
+chunk). The other five PMFs get the same seven runs (1.3-1.9 nm) extended to
+12 ns, and in succ-1D-Ca, whose halves still disagreed by 2 kT at 12 ns, the
+four slowest (1.3, 1.4, 1.6, 1.7 nm) to 20 ns.
 
 **Budget.** One window on the RTX 3080 runs at 245 ns/day; three windows side
 by side reach about 400 ns/day in total (330-520 ns/day in production,
-depending on what else shares the machine). A PMF costs 16 x 4.5 ns = 72 ns
-plus a 2.5 ns pull, about 4.5 GPU-hours. The full matrix (native and
+depending on what else shares the machine). The full matrix (native and
 succinylated, both staggers, each without and with Ca2+ and Mg2+, sulfate with
-the succinylated pair) is 14 PMFs, about 2.7 GPU-days. Run instead, about 1.4
-GPU-days: the four monovalent PMFs, ion PMFs for the succinylated 1 D pair
-with Ca2+ and with sulfate, and 20 ns at contact for the remaining ion
-conditions (bridge counts only). <!-- BUDGET -->
+the succinylated pair) would be 14 PMFs. Run instead: the four monovalent
+PMFs, ion PMFs for the succinylated 1 D pair with Ca2+ and with sulfate, and
+20 ns at contact for the three remaining ion conditions (bridge counts only).
+Planned at 4 ns per window, about 1.4 GPU-days; with the contact-region
+extensions the campaign simulated 890 ns of windows and contact runs plus
+nine 2.5 ns pulls, about 2 days of the GPU running three jobs at a time.
 
 ### Analysis
 

@@ -309,6 +309,7 @@ def main(argv=None):
     ap.add_argument("--no-movie", action="store_true")
     ap.add_argument("--no-session", action="store_true")
     ap.add_argument("--systems", nargs="*")
+    ap.add_argument("--threads", type=int, default=2, help="PyMOL ray-tracing threads")
     a = ap.parse_args(argv)
     dest = Path(a.dest)
     dest.mkdir(parents=True, exist_ok=True)
@@ -316,12 +317,13 @@ def main(argv=None):
     names = [n for n in names if runs(n)]
     if not a.no_copy:
         copy_tree(dest, names)
-    sessions = {n: contact_run(n) for n in names}
+    every = [n for n in systems() if runs(n)]
+    sessions = {n: contact_run(n) for n in every}   # the README tags every system's session run
     if not a.no_session:
         for n in names:
             r = sessions[n]
             print(f"session {n} {r}", flush=True)
-            make_session(WORK / n / r, dest / n / r, f"{n} {r}", movie=not a.no_movie)
+            make_session(WORK / n / r, dest / n / r, f"{n} {r}", movie=not a.no_movie, threads=a.threads)
     write_readme(dest, systems(), sessions)
     print(f"README: {dest / 'README.txt'}")
 
