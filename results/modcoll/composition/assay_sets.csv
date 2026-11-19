@@ -1,0 +1,49 @@
+band,n_candidates,assays,n_assays,pairs_separated,f_succ_range_left,f_acet_range_left,f_deam_range_left
+0.1,1261,amide_per_molecule + mass_shift_Da,2,0.952917,0.308803,0.573037,0.0951229
+0.1,1261,free_amine_fraction + mass_shift_Da,2,0.921833,0.1841,0.260428,0.583941
+0.1,1261,free_amine_fraction + amide_per_molecule,2,0.915899,0.787787,0.806344,0.0954401
+0.1,1261,carboxyl_per_molecule + mass_shift_Da,2,0.866588,0.31816,0.585289,0.515781
+0.1,1261,amide_per_molecule + carboxyl_per_molecule,2,0.856748,0.62383,0.77839,0.0954401
+0.1,1261,amide_per_molecule + net_charge_pH7,2,0.846582,0.736955,0.894211,0.0954401
+0.1,1261,mass_shift_Da + net_charge_pH7,2,0.840494,0.335686,0.630373,0.583941
+0.1,1261,mass_shift_Da + charge_slope_at_pI,2,0.815904,0.336281,0.630888,0.67272
+0.1,1261,free_amine_fraction + amide_per_molecule + mass_shift_Da,3,0.98077,0.175496,0.254282,0.0951229
+0.1,1261,amide_per_molecule + mass_shift_Da + net_charge_pH3,3,0.954037,0.304798,0.560785,0.0951229
+0.1,1261,amide_per_molecule + carboxyl_per_molecule + mass_shift_Da,3,0.953164,0.306027,0.567209,0.0951229
+0.1,1261,amide_per_molecule + mass_shift_Da + net_charge_pH7,3,0.952917,0.308803,0.573037,0.0951229
+0.1,1261,amide_per_molecule + mass_shift_Da + charge_slope_at_pI,3,0.952917,0.308803,0.573037,0.0951229
+0.1,1261,amide_per_molecule + mass_shift_Da + pI,3,0.952917,0.308803,0.573037,0.0951229
+0.1,1261,amide_per_molecule + mass_shift_Da + pI_salt_shift,3,0.952917,0.308803,0.573037,0.0951229
+0.1,1261,free_amine_fraction + amide_per_molecule + carboxyl_per_molecule,3,0.939552,0.581443,0.624187,0.0954401
+0.2,2206,amide_per_molecule + mass_shift_Da,2,0.966775,0.33087,0.641002,0.0952629
+0.2,2206,free_amine_fraction + amide_per_molecule,2,0.94395,0.829352,0.829352,0.0953762
+0.2,2206,free_amine_fraction + mass_shift_Da,2,0.934413,0.186741,0.263599,0.764574
+0.2,2206,carboxyl_per_molecule + mass_shift_Da,2,0.899465,0.337013,0.642067,0.565209
+0.2,2206,amide_per_molecule + net_charge_pH7,2,0.895876,0.723141,0.904737,0.0953762
+0.2,2206,mass_shift_Da + net_charge_pH7,2,0.885591,0.350612,0.67908,0.60204
+0.2,2206,amide_per_molecule + carboxyl_per_molecule,2,0.885213,0.636469,0.808908,0.0953762
+0.2,2206,mass_shift_Da + charge_slope_at_pI,2,0.848979,0.352697,0.679646,0.762285
+0.2,2206,free_amine_fraction + amide_per_molecule + mass_shift_Da,3,0.988373,0.175204,0.254556,0.0952629
+0.2,2206,amide_per_molecule + mass_shift_Da + net_charge_pH3,3,0.968584,0.321782,0.612353,0.0952629
+0.2,2206,amide_per_molecule + carboxyl_per_molecule + mass_shift_Da,3,0.967309,0.325657,0.63189,0.0952629
+0.2,2206,amide_per_molecule + mass_shift_Da + pI,3,0.966895,0.33087,0.640775,0.0952629
+0.2,2206,amide_per_molecule + mass_shift_Da + net_charge_pH7,3,0.966775,0.33087,0.641002,0.0952629
+0.2,2206,amide_per_molecule + mass_shift_Da + charge_slope_at_pI,3,0.966775,0.33087,0.641002,0.0952629
+0.2,2206,amide_per_molecule + mass_shift_Da + pI_salt_shift,3,0.966775,0.33087,0.641002,0.0952629
+0.2,2206,free_amine_fraction + amide_per_molecule + carboxyl_per_molecule,3,0.963106,0.577085,0.616138,0.0953762
+0.3,2900,amide_per_molecule + mass_shift_Da,2,0.971577,0.346431,0.693948,0.095569
+0.3,2900,free_amine_fraction + amide_per_molecule,2,0.956441,0.815931,0.815931,0.0956034
+0.3,2900,free_amine_fraction + mass_shift_Da,2,0.943092,0.187276,0.266017,0.83619
+0.3,2900,amide_per_molecule + net_charge_pH7,2,0.917725,0.694138,0.916621,0.0956034
+0.3,2900,carboxyl_per_molecule + mass_shift_Da,2,0.912361,0.351793,0.691448,0.589155
+0.3,2900,mass_shift_Da + net_charge_pH7,2,0.906224,0.360897,0.719345,0.593414
+0.3,2900,amide_per_molecule + carboxyl_per_molecule,2,0.897685,0.623052,0.837828,0.0956034
+0.3,2900,amide_per_molecule + pI,2,0.874742,0.919552,0.983603,0.0956034
+0.3,2900,free_amine_fraction + amide_per_molecule + mass_shift_Da,3,0.990918,0.175776,0.257017,0.095569
+0.3,2900,amide_per_molecule + mass_shift_Da + net_charge_pH3,3,0.973545,0.334948,0.655741,0.095569
+0.3,2900,free_amine_fraction + amide_per_molecule + net_charge_pH7,3,0.972369,0.593293,0.638966,0.0956034
+0.3,2900,amide_per_molecule + carboxyl_per_molecule + mass_shift_Da,3,0.972333,0.339431,0.683,0.095569
+0.3,2900,amide_per_molecule + mass_shift_Da + pI,3,0.971866,0.346431,0.693034,0.095569
+0.3,2900,free_amine_fraction + amide_per_molecule + carboxyl_per_molecule,3,0.971793,0.560638,0.601914,0.0956034
+0.3,2900,amide_per_molecule + mass_shift_Da + net_charge_pH7,3,0.971591,0.346431,0.693948,0.095569
+0.3,2900,amide_per_molecule + mass_shift_Da + charge_slope_at_pI,3,0.971577,0.346431,0.693948,0.095569

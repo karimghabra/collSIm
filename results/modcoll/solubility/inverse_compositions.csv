@@ -1,0 +1,67 @@
+variant,f_succ,f_acet,f_deam,liming_reference,pI_ensemble,pairs,B2_star [deionized water],share_attractive [deionized water],matches [deionized water],"B2_star [pH 7, dilute buffer]","share_attractive [pH 7, dilute buffer]","matches [pH 7, dilute buffer]",B2_star [PBS],share_attractive [PBS],matches [PBS],B2_star [sodium acetate pH 4.2],share_attractive [sodium acetate pH 4.2],matches [sodium acetate pH 4.2],"B2_star [acetate pH 4.2, 50 mM]","share_attractive [acetate pH 4.2, 50 mM]","matches [acetate pH 4.2, 50 mM]",matches_all_pair_criteria
+base,0.5,0.5,0,False,4.41966,2,510.369,0,True,-1.34423e+12,1,False,-1789.7,1,False,-2.32536e+12,1,True,-2.79407e+06,1,True,False
+base,0.75,0.25,0,False,4.34684,2,502.723,0,True,-4.75728e+10,1,False,-444.537,1,False,-1.80029e+14,1,True,-7.08782e+06,1,True,False
+base,1,0,0,False,4.28809,1,493.818,0,True,-1.54107e+11,1,False,-180.18,1,False,-5.41573e+15,1,True,-3.53148e+07,1,True,False
+base,0,1,0.18,True,4.4976,2,509.649,0,True,-1.71967e+09,1,False,-2785.03,1,False,-1.58514e+10,1,True,-351161,1,True,False
+base,0.25,0.75,0.18,True,4.40483,2,500.059,0,True,-1.04635e+09,1,False,-594.263,1,False,-2.2842e+12,1,True,-1.39389e+06,1,True,False
+base,0.5,0.25,0.18,True,4.49453,2,584.409,0,True,-1.17102e+11,1,False,-2240.61,1,False,-9.48882e+09,1,True,-308739,1,True,False
+base,0.5,0.5,0.18,True,4.332,2,492.116,0,True,-1.58328e+11,1,False,-309.799,1,False,-1.4423e+14,1,True,-4.18746e+06,1,True,False
+base,0.75,0,0.18,True,4.41781,2,577.343,0,True,-2.1558e+09,1,False,-1051.97,1,False,-7.2767e+11,1,True,-1.31488e+06,1,True,False
+base,0.75,0.25,0.18,True,4.27242,2,484.303,0,True,-1.41124e+09,1,False,-185.248,1,False,-7.16069e+15,1,True,-1.13206e+07,1,True,False
+base,1,0,0.18,True,4.22286,2,475.227,0,True,-4.78058e+08,1,False,-109.261,1,False,-8.22539e+16,1,True,-3.44344e+07,1,True,False
+base,0,0.75,0.5,False,4.49018,2,578.409,0,True,-1.43412e+09,1,False,-11106.2,1,False,-7.81126e+09,1,True,-404895,1,True,False
+base,0,1,0.5,False,4.31779,2,485.255,0,True,-1.83874e+08,1,False,-489.891,1,False,-2.84255e+12,1,True,-2.99058e+06,1,True,False
+base,0.25,0.5,0.5,False,4.40954,2,569.402,0,True,-1.18638e+08,1,False,-1259.89,1,False,-2.33568e+11,1,True,-2.11802e+06,1,True,False
+base,0.25,0.75,0.5,False,4.25735,2,475.401,0,True,-1.41076e+08,1,False,-129.152,1,False,-1.81693e+14,1,True,-8.77361e+06,1,True,False
+base,0.5,0,0.5,False,4.4922,2,637.691,0,True,-1.96132e+12,1,False,-2072.12,1,False,-2.0176e+10,1,True,-430494,1,True,False
+base,0.5,0.25,0.5,False,4.34436,2,561.981,0,True,-1.11747e+10,1,False,-313.725,1,False,-1.2775e+13,1,True,-1.05989e+07,1,True,False
+base,0.5,0.5,0.5,False,4.20606,2,467.218,0,True,-6.28221e+09,1,False,-107.819,1,False,-3.12577e+15,1,True,-2.22152e+07,1,True,False
+base,0.75,0,0.5,False,4.29003,2,554.73,0,True,-7.23424e+07,1,False,-208.992,1,False,-8.44526e+13,1,True,-2.95051e+07,1,True,False
+base,0.75,0.25,0.5,False,4.16184,2,459.166,0,True,-2.47969e+07,1,False,-72.8606,1,False,-3.69505e+16,1,True,-4.29417e+07,1,True,False
+base,1,0,0.5,False,4.12364,2,449.812,0,True,-2.87433e+06,1,False,-58.1956,1,False,-2.71104e+17,1,True,-6.43095e+07,1,True,False
+base,0,0.5,1,False,4.40561,2,617.147,0,True,-3.23671e+10,1,False,-1259,1,False,-3.54216e+11,1,True,-639427,1,True,False
+base,0,0.75,1,False,4.26465,2,539.728,0,True,-1.41933e+06,1,False,-166.925,1,False,-2.51585e+13,1,True,-1.40876e+07,1,True,False
+base,0,1,1,False,4.13167,1,442.181,0,True,-297380,1,False,-59.4091,1,False,-4.14615e+14,1,True,-2.10669e+07,1,True,False
+base,0.25,0,1,False,4.48255,2,682.355,0,True,-1.35116e+11,1,False,-3472.56,1,False,-1.06096e+10,1,True,-137540,1,True,False
+base,0.25,0.25,1,False,4.34678,2,608.542,0,True,-2.4878e+08,1,False,-308.538,1,False,-3.45608e+12,1,True,-2.78669e+06,1,True,False
+base,0.25,0.5,1,False,4.21802,2,530.33,0,True,-44064.3,1,False,-49.187,1,False,-2.30048e+14,1,True,-4.34165e+07,1,True,False
+base,0.25,0.75,1,False,4.09367,2,431.837,0,True,-34088.5,1,False,-38.2121,1,False,-3.65904e+15,1,True,-3.58164e+07,1,True,False
+base,0.5,0,1,False,4.2966,2,601.492,0,True,-6.40201e+08,1,False,-139.015,1,False,-9.16039e+13,1,True,-1.53687e+07,1,True,False
+base,0.5,0.25,1,False,4.17699,2,522.57,0,True,-223438,1,False,-45.4106,1,False,-3.34729e+15,1,True,-1.52893e+08,1,True,False
+base,0.5,0.5,1,False,4.05943,2,423.213,0,True,-22121.7,0.5,False,-45.852,1,False,-1.8429e+16,1,True,-7.74307e+07,1,True,False
+base,0.75,0,1,False,4.14065,2,514.983,0,True,3.82177,0.5,True,-24.355,1,False,-6.87447e+15,1,True,-2.95065e+08,1,True,False
+base,0.75,0.25,1,False,4.02853,2,414.694,0,True,84.9385,0,True,-23.8416,1,False,-2.51857e+16,1,True,-1.04393e+08,1,True,False
+base,1,0,1,False,4.00089,1,404.598,0,True,96.048,0,True,-28.2262,1,False,-3.55913e+16,1,True,-8.43737e+07,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.5,0.5,0,False,4.41966,2,428.845,0,True,-1.40076e+09,1,False,-16.1206,1,False,-2.57313e+10,1,True,-9129.89,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.75,0.25,0,False,4.34684,2,422.423,0,True,-7.32194e+07,1,False,-4.75436,1,False,-1.02614e+12,1,True,-26311.1,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",1,0,0,False,4.28809,1,414.941,0,True,-2.25669e+08,1,False,-0.942682,1,False,-2.2452e+13,1,True,-91304.1,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0,1,0.18,True,4.4976,2,428.24,0,True,-2.68801e+06,1,False,-18.3076,1,False,-3.29144e+08,1,True,-1511.66,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.25,0.75,0.18,True,4.40483,2,420.183,0,True,-1.42168e+06,1,False,-5.6324,1,False,-2.78591e+10,1,True,-5691.95,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.5,0.25,0.18,True,4.49453,2,491.061,0,True,-9.25574e+07,1,False,-12.6657,1,False,-8.97764e+07,1,True,-1629.76,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.5,0.5,0.18,True,4.332,2,413.51,0,True,-8.63151e+07,1,False,-1.41744,1,False,-1.01249e+12,1,True,-19452.4,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.75,0,0.18,True,4.41781,2,485.126,0,True,-3.41204e+06,1,False,-4.81932,1,False,-5.33979e+09,1,True,-5747.2,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.75,0.25,0.18,True,4.27242,2,406.948,0,True,-1.18524e+06,1,False,0.969594,0,True,-2.65706e+13,1,True,-53972,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",1,0,0.18,True,4.22286,2,399.323,0,True,-491754,1,False,2.28068,0,True,-2.46324e+14,1,True,-143473,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0,0.75,0.5,False,4.49018,2,486.017,0,True,-6.67846e+06,1,False,-24.49,1,False,-1.48979e+07,1,True,-1535.67,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0,1,0.5,False,4.31779,2,407.742,0,True,-178236,1,False,-3.07055,1,False,-3.61296e+10,1,True,-8408.52,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.25,0.5,0.5,False,4.40954,2,478.45,0,True,-227178,1,False,-4.39677,1,False,-3.32965e+08,1,True,-5435.72,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.25,0.75,0.5,False,4.25735,2,399.464,0,True,-126720,1,False,1.27617,0,True,-1.46228e+12,1,True,-22371.8,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.5,0,0.5,False,4.4922,2,535.824,0,True,-1.01443e+09,1,False,-8.37852,1,False,-5.98605e+07,1,True,-1546.84,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.5,0.25,0.5,False,4.34436,2,472.217,0,True,-6.09312e+06,1,False,-0.0894822,0.5,False,-1.10365e+10,1,True,-20740.3,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.5,0.5,0.5,False,4.20606,2,392.59,0,True,-2.78457e+06,1,False,2.39296,0,True,-1.7791e+13,1,True,-60030.4,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.75,0,0.5,False,4.29003,2,466.127,0,True,-58741.3,1,False,1.71823,0,True,-1.36709e+11,1,True,-47730.1,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.75,0.25,0.5,False,4.16184,2,385.827,0,True,-17215.5,1,False,3.27092,0,True,-1.20518e+14,1,True,-123098,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",1,0,0.5,False,4.12364,2,377.969,0,True,-2385.15,1,False,3.8606,0,True,-7.32398e+14,1,True,-228642,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0,0.5,1,False,4.40561,2,518.561,0,True,-7.97203e+07,1,False,-5.36389,1,False,-9.0773e+08,1,True,-3457.67,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0,0.75,1,False,4.26465,2,453.515,0,True,-9910.63,1,False,0.67366,0,True,-2.20125e+10,1,True,-32582.5,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0,1,1,False,4.13167,1,371.551,0,True,-166.813,1,False,2.93401,0,True,-2.84027e+12,1,True,-53337.9,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.25,0,1,False,4.48255,2,573.355,0,True,-2.08804e+08,1,False,-7.23363,1,False,-6.66476e+07,1,True,-757.089,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.25,0.25,1,False,4.34678,2,511.33,0,True,-645944,1,False,0.599056,0,True,-6.78621e+09,1,True,-10378.6,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.25,0.5,1,False,4.21802,2,445.621,0,True,-0.46157,0.5,False,2.95519,0,True,-1.79157e+11,1,True,-77340.9,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.25,0.75,1,False,4.09367,2,362.863,0,True,40.6967,0,True,3.95731,0,True,-1.80291e+13,1,True,-85745.1,1,True,True
+"contact 1.80 nm, soft core 0.5 nm",0.5,0,1,False,4.2966,2,505.406,0,True,-244694,0.5,False,2.25165,0,True,-8.57898e+10,1,True,-36294.5,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.5,0.25,1,False,4.17699,2,439.104,0,True,-77.2695,0.5,False,3.67002,0,True,-1.89174e+12,1,True,-193889,1,True,False
+"contact 1.80 nm, soft core 0.5 nm",0.5,0.5,1,False,4.05943,2,355.624,0,True,58.9184,0,True,4.37426,0,True,-7.48737e+13,1,True,-158099,1,True,True
+"contact 1.80 nm, soft core 0.5 nm",0.75,0,1,False,4.14065,2,432.733,0,True,70.3003,0,True,4.32813,0,True,-6.39591e+12,1,True,-318872,1,True,True
+"contact 1.80 nm, soft core 0.5 nm",0.75,0.25,1,False,4.02853,2,348.489,0,True,76.0499,0,True,4.91082,0,True,-8.23163e+13,1,True,-205439,1,True,True
+"contact 1.80 nm, soft core 0.5 nm",1,0,1,False,4.00089,1,340.172,0,True,81.2012,0,True,5.27685,0,True,-1.04262e+14,1,True,-218975,1,True,True

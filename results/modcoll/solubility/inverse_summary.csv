@@ -1,0 +1,9 @@
+variant,pI_band,compositions,match [deionized water],"match [pH 7, dilute buffer]",match [PBS],match [sodium acetate pH 4.2],"match [acetate pH 4.2, 50 mM]",match all pair criteria,excluded by the pair criteria
+base,4.2 +- 0.1,14,14,1,0,14,14,0,14
+base,4.2 +- 0.2,23,23,3,0,23,23,0,23
+base,4.2 +- 0.3,33,33,3,0,33,33,0,33
+base,any,33,33,3,0,33,33,0,33
+"contact 1.80 nm, soft core 0.5 nm",4.2 +- 0.1,14,14,1,13,14,14,1,13
+"contact 1.80 nm, soft core 0.5 nm",4.2 +- 0.2,23,23,5,18,23,23,5,18
+"contact 1.80 nm, soft core 0.5 nm",4.2 +- 0.3,33,33,5,18,33,33,5,28
+"contact 1.80 nm, soft core 0.5 nm",any,33,33,5,18,33,33,5,28
