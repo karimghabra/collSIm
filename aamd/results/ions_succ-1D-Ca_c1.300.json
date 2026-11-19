@@ -1,0 +1,58 @@
+{
+ "system": "succ-1D-Ca",
+ "job": "c1.300",
+ "md": {
+  "species": [
+   "Ca"
+  ],
+  "n_frames": 2000,
+  "kinds": [
+   "inner-inner",
+   "inner-outer",
+   "outer-outer"
+  ],
+  "bridges_mean": [
+   0.0,
+   0.0275,
+   0.0
+  ],
+  "bridges_total_mean": 0.0275,
+  "bridges_total_block_se": 0.024494897427831782,
+  "ions_in_contact_mean": 3.6475,
+  "n_divalent": 12,
+  "bulk_conc_M": 0.03785367487087353,
+  "partners": {
+   "carboxylate_O": 40,
+   "donor_N": 18
+  }
+ },
+ "coarse": {
+  "frames": [
+   0,
+   285,
+   571,
+   856,
+   1142,
+   1427,
+   1713,
+   1999
+  ],
+  "kinds": [
+   "inner-inner",
+   "inner-outer",
+   "outer-outer"
+  ],
+  "bridges_mean": [
+   0.0,
+   0.027291666666666665,
+   0.10875000000000001
+  ],
+  "bridges_total_mean": 0.13604166666666667,
+  "bridges_total_frame_sd": 0.1441255446444093,
+  "sweeps": 6000,
+  "equil_sweeps": 2000,
+  "bath_M": 0.03785367487087353,
+  "ionic_strength_M": 0.2163048570982352,
+  "core_radius_nm": 0.5
+ }
+}

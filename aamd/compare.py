@@ -22,6 +22,10 @@ Definitions (all kT at 298 K, relative to the mean over 2.55-2.80 nm):
   eps_h_fit    the hydrophobic strength that would make the coarse model match:
                F_el + eps_h * H = dG_contact, H the rotation-averaged hydrophobic
                overlap at d_contact; least squares over the monovalent systems
+  eps_h_offset the same with a register-independent constant c added,
+               dG_contact - E_el = -eps_h H + c, weighted by the block errors:
+               separates a stagger-specific (hydrophobic) attraction from a
+               nonspecific one
 """
 from __future__ import annotations
 
@@ -134,6 +138,22 @@ def fit_eps_h(rows):
             "note": "rotation-averaged energies; eps_h in kT per KD unit^2"}
 
 
+def fit_eps_h_offset(rows):
+    """Weighted least squares for dG - E_el = -eps_h H + c (block errors as sigma)."""
+    if len(rows) < 3:
+        return None
+    y = np.array([r["dG_contact_kT"] - r["E_mean_el_kT"] for r in rows])
+    X = np.column_stack([[-r["H_overlap"] for r in rows], np.ones(len(rows))])
+    w = 1.0 / np.array([max(r["err_block_kT"], 1e-3) for r in rows]) ** 2
+    A = X.T @ (w[:, None] * X)
+    beta = np.linalg.solve(A, X.T @ (w * y))
+    chi2 = float(np.sum(w * (y - X @ beta) ** 2))
+    dof = len(rows) - 2
+    cov = np.linalg.inv(A) * max(chi2 / dof, 1.0)   # inflate if the scatter exceeds the errors
+    return {"eps_h": float(beta[0]), "eps_h_se": float(np.sqrt(cov[0, 0])), "c_kT": float(beta[1]),
+            "c_se": float(np.sqrt(cov[1, 1])), "chi2": chi2, "dof": dof, "n": len(rows)}
+
+
 def figure(name, res, pred):
     import matplotlib
 
@@ -204,6 +224,7 @@ def main(argv=None):
         return
     mono = [r for r in rows if r["system"].count("-") == 1 and "H_overlap" in r]
     fit = fit_eps_h(mono)
+    fit_c = fit_eps_h_offset(mono)
     by = {r["system"]: r for r in rows}
     derived = {}
     for chem in ("native", "succ", "acet"):
@@ -219,7 +240,9 @@ def main(argv=None):
             if a and b:
                 derived[f"{chem}-1D: G({ion}) - G(monovalent)"] = {
                     "measured": a["dG_contact_kT"] - b["dG_contact_kT"],
-                    "err": float(np.hypot(a["err_block_kT"], b["err_block_kT"]))}
+                    "err": float(np.hypot(a["err_block_kT"], b["err_block_kT"])),
+                    # mean-field screening only; ion bridges come from aamd.ions_compare
+                    "coarse": a.get("F_coarse_kT", np.nan) - b.get("F_coarse_kT", np.nan)}
     if by.get("succ-1D") and by.get("native-1D"):
         a, b = by["succ-1D"], by["native-1D"]
         derived["1D: G(succ, pH 4.2) - G(native, pH 7.4)"] = {
@@ -243,6 +266,10 @@ def main(argv=None):
     if fit:
         lines += ["", f"eps_h that would match the monovalent systems: {fit['eps_h_fit']:.3f} +- {fit['se']:.3f} "
                       f"kT/KD^2 (n = {fit['n']}; model value 0.05)"]
+    if fit_c:
+        lines += [f"with a register-independent offset c: eps_h = {fit_c['eps_h']:.3f} +- {fit_c['eps_h_se']:.3f} "
+                  f"kT/KD^2, c = {fit_c['c_kT']:.2f} +- {fit_c['c_se']:.2f} kT "
+                  f"(chi2 {fit_c['chi2']:.1f} on {fit_c['dof']} dof)"]
     (RESULTS / "comparison.md").write_text("\n".join(lines) + "\n")
     lines += ["", "| system | minimum at d (surface sep.) | F 2 kT above minimum, inside, at | inner decay length | "
                   "mean F at surface sep. 0.5-1.0 nm |", "|---|---|---|---|---|"]
@@ -255,6 +282,7 @@ def main(argv=None):
                      f"{('%+.2f kT' % f_lr) if f_lr is not None else '-'} |")
     (RESULTS / "comparison.md").write_text("\n".join(lines) + "\n")
     (RESULTS / "comparison.json").write_text(json.dumps({"rows": rows, "derived": derived, "eps_h_fit": fit,
+                                                         "eps_h_offset_fit": fit_c,
                                                          "short_range": hydration}, indent=1))
     summary_figure(rows)
     print("\n".join(lines))
