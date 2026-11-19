@@ -1,0 +1,58 @@
+{
+ "system": "native-1D-Mg",
+ "job": "c1.300",
+ "md": {
+  "species": [
+   "Mg"
+  ],
+  "n_frames": 2000,
+  "kinds": [
+   "inner-inner",
+   "inner-outer",
+   "outer-outer"
+  ],
+  "bridges_mean": [
+   0.0,
+   0.0,
+   0.0965
+  ],
+  "bridges_total_mean": 0.0965,
+  "bridges_total_block_se": 0.04027716474629266,
+  "ions_in_contact_mean": 1.4655,
+  "n_divalent": 12,
+  "bulk_conc_M": 0.047829482849654346,
+  "partners": {
+   "carboxylate_O": 34,
+   "donor_N": 29
+  }
+ },
+ "coarse": {
+  "frames": [
+   0,
+   285,
+   571,
+   856,
+   1142,
+   1427,
+   1713,
+   1999
+  ],
+  "kinds": [
+   "inner-inner",
+   "inner-outer",
+   "outer-outer"
+  ],
+  "bridges_mean": [
+   0.0,
+   0.024166666666666666,
+   0.07604166666666667
+  ],
+  "bridges_total_mean": 0.10020833333333334,
+  "bridges_total_frame_sd": 0.11068487192482933,
+  "sweeps": 6000,
+  "equil_sweeps": 2000,
+  "bath_M": 0.047829482849654346,
+  "ionic_strength_M": 0.20242556168856407,
+  "core_radius_nm": 0.5
+ }
+}

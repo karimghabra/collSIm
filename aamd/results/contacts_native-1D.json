@@ -1,0 +1,137 @@
+{
+ "system": "native-1D",
+ "windows": [
+  "c1.300",
+  "0"
+ ],
+ "frames": 1600,
+ "contacts_per_frame": 25.815625,
+ "residue_pairs_seen": 167,
+ "share_by_class": {
+  "apolar-apolar": 0.19402009441956186,
+  "charged-charged": 0.1566880522939112,
+  "apolar-imino": 0.1555743856675947,
+  "charged-polar": 0.11129403219949155,
+  "charged-imino": 0.10744461929548482,
+  "apolar-polar": 0.10647621353347049,
+  "imino-imino": 0.06691683815518704,
+  "polar-polar": 0.0385425493281685,
+  "imino-polar": 0.036944679820844935,
+  "apolar-charged": 0.02609853528628495
+ },
+ "atom_contacts_share": {
+  "C-C": 0.39812849480771423,
+  "C-polar": 0.4558598653429191,
+  "polar-polar": 0.14601163984936666
+ },
+ "spearman_freq_vs_h_product": 0.20147719298017439,
+ "spearman_freq_vs_h_product_attractive": 0.12024116912898654,
+ "share_of_contacts_on_pairs_coarse_calls_attractive": 0.6588064398983177,
+ "top_pairs": [
+  {
+   "res_a": "GLN",
+   "res_b": "LYS",
+   "freq": 0.99375,
+   "h_product": 8.296969636045098,
+   "classes": "charged-polar"
+  },
+  {
+   "res_a": "GLN",
+   "res_b": "GLY",
+   "freq": 0.97625,
+   "h_product": -1.1088642257177426,
+   "classes": "polar-polar"
+  },
+  {
+   "res_a": "GLN",
+   "res_b": "ALA",
+   "freq": 0.9225,
+   "h_product": -7.0211026531115275,
+   "classes": "apolar-polar"
+  },
+  {
+   "res_a": "ALA",
+   "res_b": "HYP",
+   "freq": 0.9,
+   "h_product": -2.057126749497071,
+   "classes": "apolar-imino"
+  },
+  {
+   "res_a": "LYS",
+   "res_b": "GLU",
+   "freq": 0.859375,
+   "h_product": 8.296969636045098,
+   "classes": "charged-charged"
+  },
+  {
+   "res_a": "PHE",
+   "res_b": "ILE",
+   "freq": 0.846875,
+   "h_product": 19.192467416641165,
+   "classes": "apolar-apolar"
+  },
+  {
+   "res_a": "ALA",
+   "res_b": "ILE",
+   "freq": 0.840625,
+   "h_product": 13.879848520001977,
+   "classes": "apolar-apolar"
+  },
+  {
+   "res_a": "ASP",
+   "res_b": "LYS",
+   "freq": 0.836875,
+   "h_product": 8.296969636045098,
+   "classes": "charged-charged"
+  },
+  {
+   "res_a": "PHE",
+   "res_b": "VAL",
+   "freq": 0.785,
+   "h_product": 18.10868174764941,
+   "classes": "apolar-apolar"
+  },
+  {
+   "res_a": "ALA",
+   "res_b": "PRO",
+   "freq": 0.78375,
+   "h_product": -2.057126749497071,
+   "classes": "apolar-imino"
+  },
+  {
+   "res_a": "GLN",
+   "res_b": "LYS",
+   "freq": 0.77875,
+   "h_product": 8.296969636045098,
+   "classes": "charged-polar"
+  },
+  {
+   "res_a": "HYP",
+   "res_b": "PHE",
+   "freq": 0.7775,
+   "h_product": -2.8445078528578827,
+   "classes": "apolar-imino"
+  },
+  {
+   "res_a": "ALA",
+   "res_b": "PRO",
+   "freq": 0.735625,
+   "h_product": -2.057126749497071,
+   "classes": "apolar-imino"
+  },
+  {
+   "res_a": "GLY",
+   "res_b": "ILE",
+   "freq": 0.70625,
+   "h_product": 2.192086947395764,
+   "classes": "apolar-polar"
+  },
+  {
+   "res_a": "ALA",
+   "res_b": "PHE",
+   "freq": 0.6825,
+   "h_product": 9.438396395715356,
+   "classes": "apolar-apolar"
+  }
+ ]
+}

@@ -1,0 +1,169 @@
+# aamd campaign jobs, taken in order by 'aamd run' workers (see aamd/umbrella.py)
+# kinds: build SYSTEM | pull SYSTEM | window SYSTEM I [NS] (a later line with a longer NS extends a finished window from its last chunk) | contact SYSTEM R0_NM NS (one umbrella run at R0; "contact S 1.300 4.0" is the inner window added to every PMF)
+pull native-05D
+window native-1D 0
+window native-1D 1
+window native-1D 2
+window native-1D 3
+window native-1D 4
+window native-1D 5
+window native-1D 6
+window native-1D 7
+window native-1D 8
+window native-1D 9
+window native-1D 10
+window native-1D 11
+window native-1D 12
+window native-1D 13
+window native-1D 14
+contact native-1D 1.300 4.0
+# contact region (1.3-1.9 nm): statistical inefficiency 160-590 ps at 4 ns, halves differ by several kT -> extend to 16 ns
+contact native-1D 1.300 16.0
+window native-1D 0 16
+window native-1D 1 16
+window native-1D 2 16
+window native-1D 3 16
+window native-1D 4 16
+window native-1D 5 16
+build succ-1D
+build succ-05D
+build succ-1D-Ca
+build succ-1D-SO4
+build succ-1D-Mg
+window native-05D 0
+window native-05D 1
+window native-05D 2
+window native-05D 3
+window native-05D 4
+window native-05D 5
+window native-05D 6
+window native-05D 7
+window native-05D 8
+window native-05D 9
+window native-05D 10
+window native-05D 11
+window native-05D 12
+window native-05D 13
+window native-05D 14
+contact native-05D 1.300 4.0
+# contact region extended to 12 ns (native-05D at 4 ns: halves differ by up to 3.2 kT)
+contact native-05D 1.300 12.0
+window native-05D 0 12
+window native-05D 1 12
+window native-05D 2 12
+window native-05D 3 12
+window native-05D 4 12
+window native-05D 5 12
+pull succ-1D
+pull succ-05D
+window succ-1D 0
+window succ-1D 1
+window succ-1D 2
+window succ-1D 3
+window succ-1D 4
+window succ-1D 5
+window succ-1D 6
+window succ-1D 7
+window succ-1D 8
+window succ-1D 9
+window succ-1D 10
+window succ-1D 11
+window succ-1D 12
+window succ-1D 13
+window succ-1D 14
+contact succ-1D 1.300 4.0
+# contact region extended to 12 ns (native-1D needed 16 ns; see docs)
+contact succ-1D 1.300 12.0
+window succ-1D 0 12
+window succ-1D 1 12
+window succ-1D 2 12
+window succ-1D 3 12
+window succ-1D 4 12
+window succ-1D 5 12
+window succ-05D 0
+window succ-05D 1
+window succ-05D 2
+window succ-05D 3
+window succ-05D 4
+window succ-05D 5
+window succ-05D 6
+window succ-05D 7
+window succ-05D 8
+window succ-05D 9
+window succ-05D 10
+window succ-05D 11
+window succ-05D 12
+window succ-05D 13
+window succ-05D 14
+contact succ-05D 1.300 4.0
+# contact region extended to 12 ns (native-05D at 4 ns: halves differ by up to 3.2 kT)
+contact succ-05D 1.300 12.0
+window succ-05D 0 12
+window succ-05D 1 12
+window succ-05D 2 12
+window succ-05D 3 12
+window succ-05D 4 12
+window succ-05D 5 12
+pull succ-1D-Ca
+pull succ-1D-SO4
+window succ-1D-Ca 0
+window succ-1D-Ca 1
+window succ-1D-Ca 2
+window succ-1D-Ca 3
+window succ-1D-Ca 4
+window succ-1D-Ca 5
+window succ-1D-Ca 6
+window succ-1D-Ca 7
+window succ-1D-Ca 8
+window succ-1D-Ca 9
+window succ-1D-Ca 10
+window succ-1D-Ca 11
+window succ-1D-Ca 12
+window succ-1D-Ca 13
+window succ-1D-Ca 14
+contact succ-1D-Ca 1.300 4.0
+# contact region extended to 12 ns (native-1D needed 16 ns; see docs)
+contact succ-1D-Ca 1.300 12.0
+window succ-1D-Ca 0 12
+window succ-1D-Ca 1 12
+window succ-1D-Ca 2 12
+window succ-1D-Ca 3 12
+window succ-1D-Ca 4 12
+window succ-1D-Ca 5 12
+# succ-1D-Ca at 12 ns: g = 0.4-1.3 ns in the 1.3, 1.4, 1.6 and 1.7 nm runs, halves differ by 2.2 kT at the well -> those runs to 20 ns
+contact succ-1D-Ca 1.300 20.0
+window succ-1D-Ca 0 20
+window succ-1D-Ca 2 20
+window succ-1D-Ca 3 20
+window succ-1D-SO4 0
+window succ-1D-SO4 1
+window succ-1D-SO4 2
+window succ-1D-SO4 3
+window succ-1D-SO4 4
+window succ-1D-SO4 5
+window succ-1D-SO4 6
+window succ-1D-SO4 7
+window succ-1D-SO4 8
+window succ-1D-SO4 9
+window succ-1D-SO4 10
+window succ-1D-SO4 11
+window succ-1D-SO4 12
+window succ-1D-SO4 13
+window succ-1D-SO4 14
+contact succ-1D-SO4 1.300 4.0
+# contact region extended to 12 ns (native-1D needed 16 ns; see docs)
+contact succ-1D-SO4 1.300 12.0
+window succ-1D-SO4 0 12
+window succ-1D-SO4 1 12
+window succ-1D-SO4 2 12
+window succ-1D-SO4 3 12
+window succ-1D-SO4 4 12
+window succ-1D-SO4 5 12
+pull native-1D-Ca
+pull native-1D-Mg
+pull succ-1D-Mg
+# contact runs: 20 ns at the minimum of the matching monovalent PMF (native-1D: 1.31 nm)
+contact native-1D-Ca 1.300 20.0
+contact native-1D-Mg 1.300 20.0
+# succ-1D-Mg at the succ-1D minimum (1.39 nm)
+contact succ-1D-Mg 1.400 20.0

@@ -1,0 +1,10 @@
+# Viewing environment for aamd.export (PyMOL sessions, movies), kept apart
+# from the simulation environment. Exact builds: environment-viz.lock.txt
+# (micromamba create -n viz --file aamd/environment-viz.lock.txt).
+name: viz
+channels: [conda-forge]
+dependencies:
+  - python=3.11.18
+  - pymol-open-source=3.1.0
+  - ffmpeg=9.0.2
+  - mdtraj=1.11.1
