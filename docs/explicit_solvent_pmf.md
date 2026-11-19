@@ -125,19 +125,44 @@ concentration.
 | succ-1D-Ca, 1.4 nm (1.35) | 4.1 | 0.34 +- 0.19 (0.00 / 0.34) | 0.42 (0.21 / 0.20) |
 | succ-1D-Ca, 1.5 nm (1.47) | 2.6 | 0.00 | 0.26 (0.14 / 0.12) |
 | succ-1D-SO4, 1.3 / 1.4 / 1.5 nm | 2.5 / 2.4 / 3.6 | 0 | 0 |
-<!-- BRIDGES -->
+| native-1D-Ca, 1.3 nm (1.35) | 1.2 | 0.03 +- 0.03 (0.00 / 0.03) | 0.13 (0.08 / 0.05) |
+| native-1D-Mg, 1.3 nm (1.35) | 1.5 | 0.10 +- 0.04 (0.00 / 0.10) | 0.10 (0.02 / 0.08) |
+| succ-1D-Mg, 1.4 nm (1.41) | 2.2 | 0.07 +- 0.03 (0.00 / 0.07) | 0.14 (0.05 / 0.09) |
+
+The ion-only runs are 20 ns at the contact (the 1.4 nm centre for succ-1D-Mg,
+whose pull came to rest there); the others are the PMF windows.
 
 No inner-inner bridge (an ion directly bound to a carboxylate of each helix)
-forms in either model. Ca2+ bridges are rare in the all-atom runs: at most
-one bridge in three frames, long-lived when present (hence the block error),
-and none at all in 12 ns at 1.5 nm, where the coarse sampler still predicts
-0.26. Averaged over the three Ca2+ runs the coarse sampler predicts about
-twice the all-atom count (0.27 against 0.12 per frame), and it predicts more
-inner-outer bridges (one ion inner-sphere bound to one helix, outer-sphere to
-the other) than the all-atom runs show. The all-atom numbers rest on a few
-long events, so the factor is uncertain by about as much as itself; it
-argues against making the ion-carboxylate contact stronger and is consistent
-with making it somewhat weaker. It does not support a recalibration on its own.
+forms in either model, and the all-atom bridges are outer-outer (water
+between the ion and both groups) except in succ-1D-Ca at 1.3 nm, where all of
+its 0.03 per frame are inner-outer. Bridges are rare in the
+all-atom runs: 0.03-0.34 per frame, each long-lived when present (hence the
+block errors), none in 12 ns at 1.5 nm in succ-1D-Ca. Against the coarse
+sampler at the same geometry:
+
+- **Mg2+: right within the errors** (0.10 against 0.10 native, 0.07 against
+  0.14 succinylated). The all-atom Mg2+ keeps its six waters for the whole
+  run, as it should on 20 ns (Mg2+ water exchange takes microseconds), so
+  these runs cannot test the coarse model's inner-sphere Mg2+ states; they
+  test the outer-sphere counts, which agree.
+- **Ca2+: the coarse sampler predicts more**, about twice the all-atom count
+  over the four Ca2+ runs (0.24 against 0.10 per frame) and four to five times in
+  the two 1.3 nm runs. The excess is in inner-outer bridges (Ca2+ inner-sphere
+  on one helix, outer-sphere on the other: 0.03-0.21 coarse, 0.00-0.03
+  all-atom). In the all-atom runs 3-4 Ca2+ ions are in contact with the
+  succinylated pair (1 with the native pair), but a contacting ion rarely
+  reaches across to the other helix.
+- **Sulfate: right**, zero in both, for want of cationic partners near the
+  succinylated interface.
+
+So the ion-carboxylate contact calibration is not contradicted for Mg2+; for
+Ca2+ it errs towards too many cross-helix bridges, by a factor whose own
+uncertainty (a few long events per run) is about as large as itself. It argues
+against making the Ca2+-carboxylate contact stronger and is consistent with
+making the inner-sphere Ca2+ reach somewhat shorter; it does not support a
+recalibration on its own. The divalent ions' effect on the free energy is a
+separate matter: bridges at 0.1-0.3 per frame cannot carry the several kT that
+sulfate adds, and for Ca2+ the PMF did not converge.
 
 ### Short range and hydration
 
@@ -514,6 +539,19 @@ A failing check writes one line to WARNINGS, for example
 and a hard failure marks the job failed and frees its worker for the next job.
 If failures stop the campaign as a whole (every remaining job of a PMF failed,
 or the workers die), that is reported as blocked rather than worked around.
+
+**How the campaign ended.** 112 jobs, 889.5 ns, no FAIL. Four WARN lines, all
+`umbrella_centre` in windows on the steepest part of a PMF (succ-1D-Ca 1.7 nm,
+succ-1D-SO4 1.6 nm): there the mean force is about 50 kT/nm, which a
+1000 kJ/mol/nm^2 spring balances 0.12-0.18 nm inside its centre; neighbouring
+windows still overlap (smallest overlap 0.07-0.24 per PMF). The rolling
+convergence check stayed at WARN for every PMF: the largest first-half against
+second-half difference anywhere in 1.25-2.75 nm is 1.5-2.7 kT (6.4 kT for
+succ-1D-Ca), against 0.0-1.3 kT at the minima (4.6 kT for succ-1D-Ca). The
+half-profiles of 4 ns windows are noisy at the 1-2 kT level on their own, so
+the flag is read together with the block errors in the results above. One
+episode of host memory pressure stalled the three running jobs for about three
+hours; they resumed from where they stood with no check failing.
 
 ## Reproduce
 
