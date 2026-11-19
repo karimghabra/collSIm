@@ -311,8 +311,32 @@ aamd/aamd status --convergence
 python -m aamd.selftest native-1D 6            # show that the checks fire
 python -m aamd.predict                         # coarse predictions
 python -m aamd.compare                         # tables and figures
-python -m aamd.ions_compare SYSTEM aamd/work/SYSTEM/<job>
+python -m aamd.ions_compare SYSTEM RUN          # RUN: w00, c1.300, ...
+# viewing: trajectories, README, PyMOL sessions and movies
+micromamba create -n viz --file aamd/environment-viz.lock.txt
+<viz env>/bin/python -m aamd.export /mnt/d/collSIm-aamd-trajectories
 ```
 
 Large outputs (topologies, trajectories, restart files) stay in the
 git-ignored `aamd/work/`; the analysed results are in `aamd/results/`.
+
+## Viewing the trajectories
+
+`aamd.export` copies every system's `system.pdb` and `segments.pdb` and every
+run's solute trajectory (protein and ions, no water; 0.5 ns per DCD file, a
+frame every 10 ps) to `/mnt/d/collSIm-aamd-trajectories/<system>/<run>/`
+(on Windows `D:\collSIm-aamd-trajectories`), with the layout of `aamd/work/`.
+Each run gets `solute_chains.pdb`, the DCD topology with chain ids (A, B =
+alpha1(I), C = alpha2(I) of segment 1; D, E, F the same for the staggered
+partner; ions chain I). `README.txt` there lists every system and run (centre,
+mean separation, length) and how to load a trajectory in PyMOL, ChimeraX, VMD
+and mdtraj.
+
+For each system the run nearest contact (mean separation closest to the PMF
+minimum; the contact run for the ion-only systems) also has a PyMOL session
+`session.pse` (open in PyMOL; up to 400 frames, fitted on segment 1) and a
+150-frame movie (`movie.mp4`, `movie.gif`): helix axes horizontal, the two
+segments one above the other; chains in distinct colours (pale and dark
+green, orange, pink); Asp/Glu/succinyl-lysine side chains red and
+Arg/Lys/His blue sticks; Ca2+ yellow and Mg2+ cyan spheres, sulfate
+purple spheres; Na+ and Cl- hidden.
